@@ -4,7 +4,7 @@
 Muhammad Azaam Ali
 Willem Sterckx
 Mohammed AbuQamar
-Arya Ray Chaudhary
+Aarya Ray Chaudhuri
 
 ### 1. Mushroom dataset
 Find out what is edible and what is not
