@@ -7,3 +7,7 @@ __pycache__/
 # Local notebook and tool output
 *.log
 *.tmp
+
+# Local only, not for the repo
+CLAUDE.md
+project_assignment.md
