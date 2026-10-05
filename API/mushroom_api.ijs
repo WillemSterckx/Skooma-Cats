@@ -333,10 +333,15 @@ form_page =: 3 : 0
 
 route =: 3 : 0
   'method path body' =. y
+  smoutput 'ROUTE method=[' , method , '] path=[' , path , ']'
   select. method
   case. 'GET' do.
-    if. path -: '/' do.
-      200 ; 'text/html; charset=utf-8' ; form_page ''
+    smoutput 'GET branch, path bytes: ' , ": a. i. path
+    smoutput 'literal bytes: ' , ": a. i. '/'
+    smoutput 'comparison: ' , ": path -: 47 { a.
+    smoutput 'path shape: ' , ": $ path
+    if. path -: , 47 { a. do.
+      200 ; 'text/html ; charset=utf-8' ; form_page ''
     else.
       404 ; 'text/plain' ; 'Not Found'
     end.
@@ -366,8 +371,9 @@ handle_conn =: 3 : 0
   'method path body' =. parse_request req
   resp =. route method ; path ; body
   r =. build_response resp
-  rc =. r sdsend sock ; 0
-  if. rc do. smoutput 'send failed: ' , ": rc end.
+  sr =. r sdsend sock ; 0
+  src =. > 0 { sr
+  if. src do. smoutput 'send failed: ' , ": src end.
   sdclose sock
 )
 
