@@ -25,13 +25,13 @@ LF   =: 10 { a.
 NB. ------------------------------------------------------------
 NB. Feature schema (order is canonical — the model expects this)
 NB. ------------------------------------------------------------
-FEATURES =: ;: 'cap-diameter stem-height stem-width spore-print-color gill-color habitat season ring-type cap-shape stem-surface jumbled_noise_0 jumbled_noise_1'
+FEATURES =: ' ' cut 'cap-diameter stem-height stem-width spore-print-color gill-color habitat season ring-type cap-shape stem-surface jumbled_noise_0 jumbled_noise_1'
 
 NB. Numeric columns (for the future real model). Categoricals are
 NB. expected to be one-hot / ordinal encoded downstream.
-NUMERIC_FEATURES =: ;: 'cap-diameter stem-height stem-width'
+NUMERIC_FEATURES =: ' ' cut 'cap-diameter stem-height stem-width'
 
-CAT_FEATURES =: ;: 'spore-print-color gill-color habitat season ring-type cap-shape stem-surface jumbled_noise_0 jumbled_noise_1'
+CAT_FEATURES =: ' ' cut 'spore-print-color gill-color habitat season ring-type cap-shape stem-surface jumbled_noise_0 jumbled_noise_1'
 CLASS_LABELS =: 'e' ; 'p'
 
 NB. ------------------------------------------------------------
@@ -70,10 +70,15 @@ content_length =: 3 : 0
   h =. tolower y
   m =. 'content-length:' E. h
   i =. m i. 1
-  if. i = # m do. 0 return. end.
+  if. i = # m do. return. end.
   rest =. (i + 15) }. h
-  e =. rest i. 13
-  ". dlb e {. rest
+  e1 =. rest i. 13 { a.
+  e2 =. rest i. 10 { a.
+  e =. e1 <. e2
+  val =. e {. rest
+  val =. val -. 13 { a.
+  val =. val -. 10 { a.
+  ". dlb val
 )
 
 recv_request =: 3 : 0
@@ -201,7 +206,7 @@ parse_urlencoded =: 3 : 0
     ks =. ks , < k
     vs =. vs , < v
   end.
-  ks ; vs
+  (< ks) , < vs
 )
 
 NB. ------------------------------------------------------------
@@ -233,44 +238,29 @@ NB. Feature extraction — build a canonical-order boxed vector
 NB. ------------------------------------------------------------
 extract_features =: 3 : 0
   'ks vs' =. y
-  ks =. , ks
-  vs =. , vs
   if. -. *./ FEATURES e. ks do. _1 return. end.
-  res    =. (# FEATURES) $ <''
-  filled =. (# FEATURES) $ 0
+  res =. (# FEATURES) $ <''
   for_i. i. # ks do.
-    nm =. > i { ks
-    j  =. FEATURES i. nm
-    if. j < # FEATURES do.
-      res    =. (< (> i { vs)) j } res
-      filled =. 1 j } filled
-    end.
+    j =. FEATURES i. i { ks
+    if. j < # FEATURES do. res =. (i { vs) j } res end.
   end.
-  if. 0 e. filled do. _1 return. end.
   res
 )
 
 NB. Scalar float check. Returns 1 if y parses as a single real number.
 is_number =: 3 : 0
-  r =. 0
-  try.
-    v =. ". y
-    r =. (1 = # v) *. (v = v)   NB. scalar and not NaN
-  catch.
-    r =. 0
-  end.
-  r
+  v =. _. ". y          NB. Stops code injection
+  (1 = # v) *. v = v
 )
 
-NB. Given ('ks' ; 'vs') as produced by parse_body, verify every numeric
+NB. Given ('ks' ; 'vs') as produced by , verify every numeric
 NB. feature is a parseable float. Returns 1/0.
 validate_numeric =: 3 : 0
   'ks vs' =. y
-  ks =. , ks
-  vs =. , vs
   ok =. 1
   for_n. NUMERIC_FEATURES do.
-    j =. ks i. > n
+    nm =. > n
+    j =. ks i. < nm
     if. j = # ks do. ok =. 0 break. end.
     if. -. is_number > j { vs do. ok =. 0 break. end.
   end.
@@ -282,6 +272,10 @@ NB. Handlers
 NB. ------------------------------------------------------------
 handle_predict =: 3 : 0
   kv =. parse_body y
+  smoutput 'KV type: ' , datatype kv
+  smoutput 'KV shape: ' , ": $ kv
+  smoutput 'KV length: ' , ": # , kv
+  smoutput 'KV value: ' , ": kv
   if. kv -: _1 do.
     400 ; 'application/json' ; '{"error":"unparseable request body"}' return.
   end.
