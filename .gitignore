@@ -12,3 +12,6 @@ __pycache__/
 # Local only, not for the repo
 CLAUDE.md
 project_assignment.md
+
+# Trained models (rebuild with python Mushroom/model/train.py)
+Mushroom/artifacts/

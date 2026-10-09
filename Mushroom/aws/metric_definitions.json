@@ -1,0 +1,42 @@
+[
+  {
+    "Name": "cv_auc",
+    "Regex": "\\bcv_auc=([0-9.]+)"
+  },
+  {
+    "Name": "cv_auc_std",
+    "Regex": "\\bcv_auc_std=([0-9.]+)"
+  },
+  {
+    "Name": "threshold",
+    "Regex": "\\bthreshold=([0-9.]+)"
+  },
+  {
+    "Name": "test_auc",
+    "Regex": "\\btest_auc=([0-9.]+)"
+  },
+  {
+    "Name": "test_pr_auc",
+    "Regex": "\\btest_pr_auc=([0-9.]+)"
+  },
+  {
+    "Name": "test_recall",
+    "Regex": "\\btest_recall=([0-9.]+)"
+  },
+  {
+    "Name": "test_precision",
+    "Regex": "\\btest_precision=([0-9.]+)"
+  },
+  {
+    "Name": "test_f1",
+    "Regex": "\\btest_f1=([0-9.]+)"
+  },
+  {
+    "Name": "test_accuracy",
+    "Regex": "\\btest_accuracy=([0-9.]+)"
+  },
+  {
+    "Name": "train_auc",
+    "Regex": "\\btrain_auc=([0-9.]+)"
+  }
+]
