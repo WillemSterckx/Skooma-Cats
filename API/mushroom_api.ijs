@@ -83,41 +83,41 @@ content_length =: 3 : 0
 
 recv_request =: 3 : 0
   sock =. y
-  buf =. ''
-  hdr_end =. _1
-  clen =. 0
+  buffer =. ''
+  header_end =. _1
+  content_len =. 0
   whilst. 1 do.
     r     =. sdrecv sock ; 8192 ; 0
-    chunk =. > 1 { r
-    if. 0 = # chunk do. break. end.
-    buf =. buf , chunk
-    if. hdr_end = _1 do.
-      hdr_end =. find_crlfcrlf buf
-      if. hdr_end > _1 do.
-        clen =. content_length (hdr_end + 4) {. buf
+    data =. > 1 { r
+    if. 0 = # data do. break. end.
+    buffer =. buffer , data
+    if. header_end = _1 do.
+      header_end =. find_crlfcrlf buffer
+      if. header_end > _1 do.
+        content_len =. content_length (header_end + 4) {. buffer
       end.
     end.
-    if. (hdr_end > _1) *. (# buf) >: hdr_end + 4 + clen do. break. end.
+    if. (header_end > _1) *. (# buffer) >: header_end + 4 + content_len do. break. end.
   end.
-  buf
+  buffer
 )
 
 parse_request =: 3 : 0
-  buf =. y
-  i =. find_crlfcrlf buf
+  buffer =. y
+  i =. find_crlfcrlf buffer
   if. i = _1 do.
-    hdrpart =. buf
+    header_section =. buffer
     body =. ''
   else.
-    hdrpart =. i {. buf
-    body =. (i + 4) }. buf
+    header_section =. i {. buffer
+    body =. (i + 4) }. buffer
   end.
-  lines =. <;._2 hdrpart , CRLF
+  lines =. <;._2 header_section , CRLF
   if. 0 = # lines do. '' ; '' ; '' return. end.
-  toks =. ' ' cut > 0 { lines
-  if. 2 > # toks do. '' ; '' ; body return. end.
-  method =. > 0 { toks
-  path   =. > 1 { toks
+  tokens =. ' ' cut > 0 { lines
+  if. 2 > # tokens do. '' ; '' ; body return. end.
+  method =. > 0 { tokens
+  path   =. > 1 { tokens
   method ; path ; body
 )
 
@@ -159,9 +159,9 @@ hexval =: 3 : 0
 
 url_decode =: 3 : 0
   s =. y
-  plus =. (s = '+') # i. # s
-  s =. ' ' plus } s
-  out =. ''
+  plus_positions =. (s = '+') # i. # s
+  s =. ' ' plus_positions } s
+  output =. ''
   i =. 0
   whilst. i < # s do.
     c =. i { s
@@ -170,54 +170,54 @@ url_decode =: 3 : 0
         h1 =. hexval (i + 1) { s
         h2 =. hexval (i + 2) { s
         if. (h1 >: 0) *. (h2 >: 0) do.
-          out =. out , a. {~ 16 #. h1 , h2
+          output =. output , a. {~ 16 #. h1 , h2
           i =. i + 3
         else.
-          out =. out , c
+          output =. output , c
           i =. i + 1
         end.
       else.
-        out =. out , c
+        output =. output , c
         i =. i + 1
       end.
     else.
-      out =. out , c
+      output =. output , c
       i =. i + 1
     end.
   end.
-  out
+  output
 )
 
 parse_urlencoded =: 3 : 0
   pairs =. <;._1 '&' , y
-  ks =. 0 $ <''
-  vs =. 0 $ <''
+  keys =. 0 $ <''
+  values =. 0 $ <''
   for_p. pairs do.
     pair =. > p
     if. 0 = # pair do. continue. end.
-    eq =. pair i. '='
-    if. eq = # pair do.
+    equals_pos =. pair i. '='
+    if. equals_pos = # pair do.
       k =. url_decode pair
       v =. ''
     else.
-      k =. url_decode eq {. pair
-      v =. url_decode (eq + 1) }. pair
+      k =. url_decode equals_pos {. pair
+      v =. url_decode (equals_pos + 1) }. pair
     end.
-    ks =. ks , < k
-    vs =. vs , < v
+    keys =. keys , < k
+    values =. values , < v
   end.
-  (< ks) , < vs
+  (< keys) , < values
 )
 
 NB. ------------------------------------------------------------
 NB. JSON body parsing (flat object only)
 NB. ------------------------------------------------------------
 parse_json_obj =: 3 : 0
-  try.   obj =. dec_json y
+  try.   parsed =. dec_json y
   catch. _1 return. end.
-  if. 2 = # $ obj do.
-    if.     2 = {. $ obj do. (0 { obj)    ; (1 { obj)
-    elseif. 2 = {: $ obj do. (0 {"1 obj) ; (1 {"1 obj)
+  if. 2 = # $ parsed do.
+    if.     2 = {. $ parsed do. (0 { parsed)    ; (1 { parsed)
+    elseif. 2 = {: $ parsed do. (0 {"1 parsed) ; (1 {"1 parsed)
     else.   _1
     end.
   else.
@@ -237,14 +237,14 @@ NB. ------------------------------------------------------------
 NB. Feature extraction — build a canonical-order boxed vector
 NB. ------------------------------------------------------------
 extract_features =: 3 : 0
-  'ks vs' =. y
-  if. -. *./ FEATURES e. ks do. _1 return. end.
-  res =. (# FEATURES) $ <''
-  for_i. i. # ks do.
-    j =. FEATURES i. i { ks
-    if. j < # FEATURES do. res =. (i { vs) j } res end.
+  'keys values' =. y
+  if. -. *./ FEATURES e. keys do. _1 return. end.
+  result =. (# FEATURES) $ <''
+  for_i. i. # keys do.
+    j =. FEATURES i. i { keys
+    if. j < # FEATURES do. result =. (i { values) j } result end.
   end.
-  res
+  result
 )
 
 NB. Scalar float check. Returns 1 if y parses as a single real number.
@@ -256,13 +256,13 @@ is_number =: 3 : 0
 NB. Given ('ks' ; 'vs') as produced by , verify every numeric
 NB. feature is a parseable float. Returns 1/0.
 validate_numeric =: 3 : 0
-  'ks vs' =. y
+  'keys values' =. y
   ok =. 1
   for_n. NUMERIC_FEATURES do.
-    nm =. > n
-    j =. ks i. < nm
-    if. j = # ks do. ok =. 0 break. end.
-    if. -. is_number > j { vs do. ok =. 0 break. end.
+    field_name =. > n
+    j =. keys i. < field_name
+    if. j = # keys do. ok =. 0 break. end.
+    if. -. is_number > j { values do. ok =. 0 break. end.
   end.
   ok
 )
@@ -271,58 +271,58 @@ NB. ------------------------------------------------------------
 NB. Handlers
 NB. ------------------------------------------------------------
 handle_predict =: 3 : 0
-  kv =. parse_body y
-  smoutput 'KV type: ' , datatype kv
-  smoutput 'KV shape: ' , ": $ kv
-  smoutput 'KV length: ' , ": # , kv
-  smoutput 'KV value: ' , ": kv
-  if. kv -: _1 do.
+  kvpair =. parse_body y
+  smoutput 'KV type: ' , datatype kvpair
+  smoutput 'KV shape: ' , ": $ kvpair
+  smoutput 'KV length: ' , ": # , kvpair
+  smoutput 'KV value: ' , ": kvpair
+  if. kvpair -: _1 do.
     400 ; 'application/json' ; '{"error":"unparseable request body"}' return.
   end.
 
-  if. -. validate_numeric kv do.
+  if. -. validate_numeric kvpair do.
     400 ; 'application/json' ; '{"error":"numeric fields must be valid numbers: cap-diameter, stem-height, stem-width"}' return.
   end.
 
-  feats =. extract_features kv
-  if. feats -: _1 do.
+  features =. extract_features kvpair
+  if. features -: _1 do.
     400 ; 'application/json' ; '{"error":"missing or empty feature fields"}' return.
   end.
 
-  pred =. predict feats
-  if. 0 = # , pred do.
+  prediction =. predict features
+  if. 0 = # , prediction do.
     500 ; 'application/json' ; '{"error":"model returned no label"}' return.
   end.
 
-  200 ; 'application/json' ; '{"class":"' , (; pred) , '"}'
+  200 ; 'application/json' ; '{"class":"' , (; prediction) , '"}'
 )
 
 form_page =: 3 : 0
   inputs =. ''
   for_f. FEATURES do.
-    nm =. > f
-    inputs =. inputs , '<label>' , nm , ' <input name="' , nm , '" /></label><br/>' , LF
+    field_name =. > f
+    inputs =. inputs , '<label>' , field_name , ' <input name="' , field_name , '" /></label><br/>' , LF
   end.
-  t =. ''
-  t =. t , '<!DOCTYPE html>' , LF
-  t =. t , '<html><head><meta charset="utf-8"><title>Mushroom Classifier</title></head><body>' , LF
-  t =. t , '<h1>Mushroom Classifier</h1>' , LF
-  t =. t , '<form id="f">' , LF , inputs
-  t =. t , '<button type="submit">Predict</button>' , LF
-  t =. t , '</form>' , LF
-  t =. t , '<pre id="out"></pre>' , LF
-  t =. t , '<script>' , LF
-  t =. t , 'document.getElementById("f").addEventListener("submit", async (e) => {' , LF
-  t =. t , '  e.preventDefault();' , LF
-  t =. t , '  const fd = new FormData(e.target);' , LF
-  t =. t , '  const body = new URLSearchParams(fd).toString();' , LF
-  t =. t , '  const r = await fetch("/predict", {method:"POST", headers:{"Content-Type":"application/x-www-form-urlencoded"}, body:body});' , LF
-  t =. t , '  const j = await r.json();' , LF
-  t =. t , '  document.getElementById("out").textContent = JSON.stringify(j, null, 2);' , LF
-  t =. t , '});' , LF
-  t =. t , '</script>' , LF
-  t =. t , '</body></html>'
-  t
+  html =. ''
+  html =. html , '<!DOCTYPE html>' , LF
+  html =. html , '<html><head><meta charset="utf-8"><title>Mushroom Classifier</title></head><body>' , LF
+  html =. html , '<h1>Mushroom Classifier</h1>' , LF
+  html =. html , '<form id="f">' , LF , inputs
+  html =. html , '<button type="submit">Predict</button>' , LF
+  html =. html , '</form>' , LF
+  html =. html , '<pre id="out"></pre>' , LF
+  html =. html , '<script>' , LF
+  html =. html , 'document.getElementById("f").addEventListener("submit", async (e) => {' , LF
+  html =. html , '  e.preventDefault();' , LF
+  html =. html , '  const fd = new FormData(e.target);' , LF
+  html =. html , '  const body = new URLSearchParams(fd).toString();' , LF
+  html =. html , '  const r = await fetch("/predict", {method:"POST", headers:{"Content-Type":"application/x-www-form-urlencoded"}, body:body});' , LF
+  html =. html , '  const j = await r.json();' , LF
+  html =. html , '  document.getElementById("out").textContent = JSON.stringify(j, null, 2);' , LF
+  html =. html , '});' , LF
+  html =. html , '</script>' , LF
+  html =. html , '</body></html>'
+  html
 )
 
 route =: 3 : 0
@@ -357,17 +357,17 @@ handle_conn =: 3 : 0
   smoutput 'sock type:  ' , datatype sock
   smoutput 'sock shape: ' , ": $ sock
   smoutput 'sock value: ' , ": ; , sock
-  req =. recv_request sock
-  if. 0 = # req do.
+  request =. recv_request sock
+  if. 0 = # request do.
     sdclose sock
     return.
   end.
-  'method path body' =. parse_request req
-  resp =. route method ; path ; body
-  r =. build_response resp
-  sr =. r sdsend sock ; 0
-  src =. > 0 { sr
-  if. src do. smoutput 'send failed: ' , ": src end.
+  'method path body' =. parse_request request
+  response =. route method ; path ; body
+  r =. build_response response
+  send_result =. r sdsend sock ; 0
+  send_rc =. > 0 { send_result
+  if. send_rc do. smoutput 'send failed: ' , ": send_rc end.
   sdclose sock
 )
 
@@ -395,13 +395,13 @@ run =: 3 : 0
   whilst. 1 do.
     r   =. sdaccept s
     rc  =. > 0 { r
-    cli =. {. , > 1 { r
+    client_sock =. {. , > 1 { r
     if. rc = 0 do.
       try.
-        handle_conn cli
+        handle_conn client_sock
       catch.
         smoutput 'handler error: ' , (13!:12 '')
-        try. sdclose cli catch. end.
+        try. sdclose client_sock catch. end.
       end.
     else.
       smoutput 'accept failed: ' , ": rc
