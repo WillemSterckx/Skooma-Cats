@@ -8,6 +8,18 @@
     "Regex": "\\bcv_auc_std=([0-9.]+)"
   },
   {
+    "Name": "val_auc",
+    "Regex": "\\bval_auc=([0-9.]+)"
+  },
+  {
+    "Name": "val_recall",
+    "Regex": "\\bval_recall=([0-9.]+)"
+  },
+  {
+    "Name": "val_precision",
+    "Regex": "\\bval_precision=([0-9.]+)"
+  },
+  {
     "Name": "threshold",
     "Regex": "\\bthreshold=([0-9.]+)"
   },
