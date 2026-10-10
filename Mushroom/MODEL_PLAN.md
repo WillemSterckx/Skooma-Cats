@@ -2,7 +2,7 @@
 
 The plan for the next step after cleaning: train and compare models, train and tune one on AWS, and host the best one so the backend can call it over HTTPS. Written on 9 Oct 2026, deadline 15 Oct.
 
-**What's already done and tested:** the model code (`model/`), the AWS front door (`aws/`), a local copy of the whole API for the backend team, the SageMaker notebook (`3.5MushroomSageMaker.ipynb`, ready to run but not run yet) and 38 tests.
+**What's already done and tested:** the model code (`model/`), the AWS front door (`aws/`), a local copy of the whole API for the backend team, the SageMaker notebook (`3.5MushroomSageMaker.ipynb`, training and tuning ran on AWS on 10 Oct, before the switch to 70/15/15, so they need a rerun) and 39 tests.
 **What's left:** notebooks 3 and 4 (the model comparison itself), running notebook 3.5 on AWS, plugging the J backend into the url, and the retrain-on-push pipeline.
 
 ## 1. How it fits together
@@ -36,7 +36,7 @@ flowchart LR
 | `aws/metric_definitions.json` | Regexes SageMaker uses to read the metrics from the training log |
 | `aws/examples/*.json` | Example requests. The tests and the docs use these same files |
 | `3.5MushroomSageMaker.ipynb` | Runs on SageMaker Studio: upload, baseline job, tuning job, endpoint, API stack |
-| `tests/` | 38 tests (section 6) |
+| `tests/` | 39 tests (section 6) |
 
 `model/` only holds the three files SageMaker needs, because the whole folder is uploaded as the source code of the job.
 
@@ -93,7 +93,7 @@ curl -s -X POST -H "Content-Type: application/json" -H "x-api-key: local-dev-key
 
 A test (`test_prepare_matches_the_cleaning_notebooks`) checks that `prepare()` gives exactly the same categories and known measurements as `mushroom_clean.csv`, so the two can't drift apart.
 
-**First observation:** the random forest with the notebook 2 settings gets cv AUC 0.827 ± 0.014 here, against 0.840 in notebook 2. The setup differs in two ways (imputer inside the folds, CV on 80% instead of 100% of the rows) and the gap is within one standard deviation. Notebook 3 should test which of the two causes it before we say anything about leakage.
+**First observation:** the random forest with the notebook 2 settings gets cv AUC 0.827 ± 0.018 on the 70% train part here, against 0.840 in notebook 2. The setup differs in two ways (imputer inside the folds, CV on 70% instead of 100% of the rows) and the gap is within one standard deviation. Notebook 3 should test which of the two causes it before we say anything about leakage.
 
 ### 4.2 `prepare()` stays outside the pickled pipeline
 The pickle only contains sklearn and numpy objects, so it loads anywhere with the same sklearn version, without our code (tested). If `prepare()` were a step inside the pipeline, the pickle would need our module under exactly the same import path everywhere (notebook, container, laptop), which breaks easily.
@@ -105,14 +105,14 @@ The pickle only contains sklearn and numpy objects, so it loads anywhere with th
 - **Not taken: SageMaker's built-in XGBoost.** It wants a csv with only numbers and the label in the first column. The one-hot encoding and imputation would then need a second container in front of the endpoint (an "inference pipeline"), and the endpoint couldn't take the raw form. Our own script in the scikit-learn container takes the raw form and is the same code we test locally. XGBoost is still worth comparing in notebook 3.
 
 ### 4.4 Threshold: recall on poisonous comes first
-Positive class = poisonous. Calling a poisonous mushroom edible is the dangerous mistake (a false negative), so we fix the **recall** we want and accept the precision that comes with it. `train.py` picks the threshold on out-of-fold predictions on the training part (never on the test part): the highest threshold that still catches `--target-recall` of the poisonous ones (default 0.90).
+Positive class = poisonous. Calling a poisonous mushroom edible is the dangerous mistake (a false negative), so we fix the **recall** we want and accept the precision that comes with it. `train.py` picks the threshold on the validation part (never on the test part): the highest threshold that still catches `--target-recall` of the poisonous ones (default 0.90).
 
-First run (random forest, 200 trees): threshold 0.249, test recall 0.90, precision 0.51, accuracy 0.63. That's a lot of edible mushrooms flagged as poisonous. The same run has train AUC 0.973 against test AUC 0.850, so the forest also overfits (bigger leaves are one of the things the tuning job tries). **This trade-off is the main thing to discuss in notebook 3**: a precision-recall curve, and which recall we defend (0.90? 0.95?). The target is one argument, so changing it doesn't need code changes.
+First run on the 70/15/15 split (random forest, 200 trees, 10 Oct): val AUC 0.836, threshold 0.249 (val recall 0.90), then on test: AUC 0.835, recall 0.887, precision 0.52, accuracy 0.65. That's a lot of edible mushrooms flagged as poisonous. Test recall lands just under the 0.90 target: the validation part has only 284 poisonous mushrooms, so a threshold picked there moves a bit on new rows. Notebook 3 can compare it with a threshold picked on out-of-fold predictions of the whole train part (3500 rows). Train AUC 0.974 against test AUC 0.835, so the forest also overfits (bigger leaves are one of the things the tuning job tries). **This trade-off is the main thing to discuss in notebook 3**: a precision-recall curve, and which recall we defend (0.90? 0.95?). The target is one argument, so changing it doesn't need code changes.
 
 The threshold is rounded **down** to 4 decimals, so rounding can't push the recall under the target. The answer's `class` is decided on the same rounded probability it shows, so the two never contradict each other.
 
 ### 4.5 We ship the model we measured
-The course's "retrain on all data before deploying" would give a model the test numbers and the threshold were never measured on. Its probabilities shift a little, so its recall at that threshold is unknown. For a model whose job is "don't miss a poisonous mushroom" we prefer a guarantee we checked, so `train.py` ships the 80% model by default. `--refit-all 1` retrains on all 5000 rows if we decide otherwise in notebook 4.
+The course's "retrain on all data before deploying" would give a model the test numbers and the threshold were never measured on. Its probabilities shift a little, so its recall at that threshold is unknown. For a model whose job is "don't miss a poisonous mushroom" we prefer a guarantee we checked, so `train.py` ships the model fit on train + validation (85%) by default; the test numbers are measured on exactly that model. `--refit-all 1` retrains on all 5000 rows if we decide otherwise in notebook 4.
 
 ### 4.6 Hosting: normal endpoint + API Gateway
 - **Normal endpoint on `ml.t2.medium`** (`SERVERLESS = False` in the notebook): the smallest machine, always warm, billed per hour. Delete it when we don't need it; the url stays the same.
@@ -122,12 +122,14 @@ The course's "retrain on all data before deploying" would give a model the test 
 
 ## 5. Plan for notebooks 3 and 4
 
+**Status 10 Oct:** Azaam started notebook 3 (70/15/15 split saved to `datasets/`, dummy baseline, logistic regression) and `3.1MushroomPyCaret.ipynb` (random forest on top, val AUC 0.838). Notebook 3's saved outputs are stale: the score table shows logreg AUC 0.49, but a clean run of the same cells gives 0.699 (same as notebook 2), so it needs a "Restart + Run All". Its "What this tells us" cells are still empty. Both notebooks train on `mushroom_clean.csv`, which has the leakage from 4.1.
+
 **3MushroomPredict.ipynb** (one notebook, or one per model, since the assignment asks for "one file per model per dataset"):
-1. Load the **raw** csv, `prepare()` it (import from `model/`), and make the stratified 80/20 split with `random_state=42`: the same split `train.py` uses.
+1. Load the **raw** csv, `prepare()` it (import from `model/`), and use the **70/15/15** split from `3MushroomPredict.ipynb` (`train.csv`, `val.csv`, `test.csv`). `split()` in `model/mushroom_model.py` gives the same rows from the raw csv, and a test checks that the saved files hold exactly those rows.
 2. **Quick first model:** the forest from notebook 2 (`python model/train.py` already does this; show its numbers).
 3. **PyCaret:** `setup(target='is_poisonous', session_id=42, fold_strategy='stratifiedkfold')` → `compare_models(sort='AUC')`. PyCaret 3.3.2 only runs on Python 3.9–3.11, so this needs its own venv with Python 3.11 (installed on Aarya's laptop). (outside the slides)
 4. **At least 2 tuned models, each with a reason:** random forest (bagging, robust to noisy labels), HistGradientBoosting and/or XGBoost (boosting, handles NaN natively), logistic regression (simple linear baseline, needs log1p + scaling). Tune with `RandomizedSearchCV` on CV, never on the test set.
-5. **Threshold:** precision-recall curve on out-of-fold predictions, choose the target recall and explain it.
+5. **Threshold:** precision-recall curve on the validation part, choose the target recall and explain it.
 6. **Error analysis:** look at the false negatives (poisonous called edible). Are they the stemless / giant groups from the EDA, or the rows with the most gaps?
 7. Test the leakage question from 4.1 (imputer inside vs outside the folds, on the same folds).
 8. Optional extension: K-Means on the scaled measurements, compared with the class and the stemless/giant groups.
@@ -148,7 +150,7 @@ From `Mushroom/`: `python -m pytest tests -q` (about 20 seconds). They prove:
 - the local API over real HTTP: key check (403), unknown route or wrong method (403 "Missing Authentication Token", like API Gateway), predict, batch, error
 - `train.py` accepts the extra arguments a tuning job adds (`--_tuning_objective_metric`). Without that every tuning job would have crashed; the code review caught it
 
-Also checked on 9 Oct (not part of `pytest`): all 38 tests pass on Python 3.12 + sklearn 1.8 (our laptops), on the exact versions of the 1.9-0 container and on the 1.4-2 fallback. `gateway.yaml` passes `cfn-lint`. Every cell of notebook 3.5 was run against the real SageMaker SDK v2.257.7 with AWS stubbed out, so every SDK call has valid arguments. The curl commands above were run against `local_api.py`.
+Also checked on 9 Oct (not part of `pytest`): all tests pass on Python 3.12 + sklearn 1.8 (our laptops), on the exact versions of the 1.9-0 container and on the 1.4-2 fallback. `gateway.yaml` passes `cfn-lint`. Every cell of notebook 3.5 was run against the real SageMaker SDK v2.257.7 with AWS stubbed out, so every SDK call has valid arguments. The curl commands above were run against `local_api.py`.
 
 **Not tested (needs our AWS account):** the real training job, the endpoint, the stack. Section 8 has what could go wrong there.
 
@@ -183,4 +185,4 @@ Rough cost: training is a few `ml.m5.large` jobs of a few minutes each (cents). 
 | Wed 14 | README, GenAI disclosure, review pass, rerun everything |
 | Thu 15 | buffer, upload on Canvas |
 
-**Retrain-on-push (later):** a GitHub Actions workflow on pushes that touch `Mushroom/`: run `pytest`, then start the training job and point the endpoint at the new model **only if** its cv_auc isn't worse than the current model's. This needs AWS keys as GitHub secrets, and AWS Academy keys expire, so to be decided: refresh the secret before the demo, or let CI only train and test and keep the deploy as one notebook cell.
+**Retrain-on-push (later):** a GitHub Actions workflow on pushes that touch `Mushroom/`: run `pytest`, then start the training job and point the endpoint at the new model **only if** its val_auc isn't worse than the current model's. This needs AWS keys as GitHub secrets, and AWS Academy keys expire, so to be decided: refresh the secret before the demo, or let CI only train and test and keep the deploy as one notebook cell.

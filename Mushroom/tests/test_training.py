@@ -6,8 +6,10 @@ import sys
 import pandas as pd
 import pytest
 
-from conftest import MUSHROOM, RAW_CSV, run_training
-from mushroom_model import FEATURES, prepare
+from sklearn.model_selection import train_test_split
+
+from conftest import CLEAN_CSV, MUSHROOM, RAW_CSV, run_training
+from mushroom_model import FEATURES, prepare, split
 
 
 def test_training_job_writes_model_and_metrics(trained):
@@ -18,8 +20,28 @@ def test_training_job_writes_model_and_metrics(trained):
     assert meta['params']['n_estimators'] == 40 and meta['params']['max_features'] == 0.5
     assert 0 < meta['threshold'] < 1 and meta['threshold'] == round(meta['threshold'], 4)
     assert meta['refit_all'] is False
-    assert 0.7 < metrics['cv_auc'] < 1 and 0.7 < metrics['test_auc'] < 1
-    assert metrics['test_tp'] + metrics['test_fp'] + metrics['test_fn'] + metrics['test_tn'] == 1000
+    assert 0.7 < metrics['cv_auc'] < 1 and 0.7 < metrics['val_auc'] < 1 and 0.7 < metrics['test_auc'] < 1
+    assert metrics['val_recall'] >= meta['target_recall']
+    assert metrics['test_tp'] + metrics['test_fp'] + metrics['test_fn'] + metrics['test_tn'] == 750
+    assert 'train 3500 val 750 test 750' in trained['log']
+
+
+def test_split_is_70_15_15_and_matches_the_notebook_split():
+    # 3MushroomPredict splits the clean csv, train.py the raw one: same row order and labels, so the same rows must land in each part
+    raw = pd.read_csv(RAW_CSV)
+    parts = split(prepare(raw), (raw['class'] == 'p').astype(int))
+    clean = pd.read_csv(CLEAN_CSV)
+    train_df, rest = train_test_split(clean, test_size=0.3, random_state=42, stratify=clean['is_poisonous'])
+    val_df, test_df = train_test_split(rest, test_size=0.50, random_state=42, stratify=rest['is_poisonous'])
+    for ours, notebook, name in zip(parts[:3], [train_df, val_df, test_df], ['train', 'val', 'test']):
+        assert list(ours.index) == list(notebook.index)
+        # and the files notebook 3 saved hold exactly those rows
+        saved = pd.read_csv(CLEAN_CSV.parent / f'{name}.csv')
+        pd.testing.assert_frame_equal(saved, clean.loc[ours.index].reset_index(drop=True))
+    assert [len(p) for p in parts[:3]] == [3500, 750, 750]
+    assert set().union(*[set(p.index) for p in parts[:3]]) == set(range(5000))
+    for y in parts[3:]:
+        assert abs(y.mean() - 0.379) < 0.002
 
 
 def test_sagemaker_metric_regexes_find_every_metric(trained):
@@ -44,8 +66,8 @@ def test_pickle_loads_without_our_code(trained, tmp_path):
 
 def test_tuning_job_arguments_are_accepted(tmp_path):
     # a tuning job adds its own hyperparameters to every training job, the script must not stop on them
-    log = run_training(tmp_path, '--model', 'rf', '--n-estimators', '20', '--cv-repeats', '1', '--_tuning_objective_metric', 'cv_auc')
-    assert 'cv_auc=' in log
+    log = run_training(tmp_path, '--model', 'rf', '--n-estimators', '20', '--cv-repeats', '1', '--_tuning_objective_metric', 'val_auc')
+    assert 'val_auc=' in log
 
 
 @pytest.mark.parametrize('extra', [

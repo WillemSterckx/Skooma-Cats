@@ -7,6 +7,7 @@ from sklearn.ensemble import HistGradientBoostingClassifier, RandomForestClassif
 from sklearn.experimental import enable_iterative_imputer  # noqa: F401
 from sklearn.impute import IterativeImputer
 from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import train_test_split
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import FunctionTransformer, OneHotEncoder, StandardScaler
 
@@ -100,3 +101,10 @@ def build_pipeline(model='rf', n_estimators=200, min_samples_leaf=3, max_feature
 
 def to_frame(rows):
     return pd.DataFrame(rows, columns=FEATURES)
+
+
+def split(X, y):
+    # stratified 70/15/15, same as 3MushroomPredict: first 70% for training, then the rest in half for validation and test
+    X_train, X_rest, y_train, y_rest = train_test_split(X, y, test_size=0.3, stratify=y, random_state=42)
+    X_val, X_test, y_val, y_test = train_test_split(X_rest, y_rest, test_size=0.5, stratify=y_rest, random_state=42)
+    return X_train, X_val, X_test, y_train, y_val, y_test
