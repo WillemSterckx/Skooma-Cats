@@ -83,7 +83,7 @@ curl -s -X POST -H "Content-Type: application/json" -H "x-api-key: local-dev-key
 2. **Call the model instead of the stub `predict`.** J's socket library has no HTTPS, so call `curl` through the shell. **Never paste user input into the command line** (a `"` in a form field would become a shell command). Write the JSON body to a temp file and pass it with `--data-binary @file`, or feed it on stdin with `--data-binary @-`:
    `curl -s -m 30 -X POST -H "Content-Type: application/json" -H "x-api-key: $MUSHROOM_API_KEY" --data-binary @/tmp/req.json "$MUSHROOM_API_URL"`
 3. **Keep the url and key out of git:** read them from environment variables (`MUSHROOM_API_URL`, `MUSHROOM_API_KEY`).
-4. **Timeout of 30 s** (`-m 30`): a serverless endpoint that has been quiet takes a few seconds to wake up. On a 502, retry once. Don't retry a 400 or 500.
+4. **Timeout of 30 s** (`-m 30`). On a 502 (endpoint off or restarting), retry once. Don't retry a 400 or 500.
 5. **Pass the answer through**, or at least `class` and `probability_poisonous`. On a 400, show the `error` text to the user.
 
 ## 4. Decisions, and the paths we didn't take
@@ -114,8 +114,9 @@ The threshold is rounded **down** to 4 decimals, so rounding can't push the reca
 ### 4.5 We ship the model we measured
 The course's "retrain on all data before deploying" would give a model the test numbers and the threshold were never measured on. Its probabilities shift a little, so its recall at that threshold is unknown. For a model whose job is "don't miss a poisonous mushroom" we prefer a guarantee we checked, so `train.py` ships the 80% model by default. `--refit-all 1` retrains on all 5000 rows if we decide otherwise in notebook 4.
 
-### 4.6 Hosting: serverless endpoint + API Gateway
-- **Serverless inference**: we pay per request instead of per hour. The cost is a cold start after a quiet period, which is fine for a demo. Fallback: a normal endpoint on `ml.t2.medium` (`SERVERLESS = False` in the notebook). Delete it when we don't need it; the url stays the same.
+### 4.6 Hosting: normal endpoint + API Gateway
+- **Normal endpoint on `ml.t2.medium`** (`SERVERLESS = False` in the notebook): the smallest machine, always warm, billed per hour. Delete it when we don't need it; the url stays the same.
+- **Tried and failed: serverless inference** (pay per request). On 10 Oct the endpoint crashed at startup. The scikit-learn container writes its web server config to `/etc/sagemaker-nginx.conf`, and serverless endpoints run the container on a read-only file system (`PermissionError: [Errno 13] Permission denied: '/etc/sagemaker-nginx.conf'` in the CloudWatch log). That path is fixed inside AWS's container code, so this container can't run serverless. Our own code never got to load.
 - **API Gateway + Lambda** instead of letting the J backend sign requests with AWS keys: AWS Academy keys expire after a few hours, so the backend would stop working during the two weeks of grading. An api key never expires, and the usage plan caps requests so a leaked key can't burn the budget.
 - **Not taken:** loading the model inside the Lambda itself (sklearn + pandas don't fit in a normal Lambda package, and it would no longer be "hosted on SageMaker"); hosting the model on the same VM as the J backend (allowed, but then AWS would only be used for training).
 
@@ -158,13 +159,14 @@ Also checked on 9 Oct (not part of `pytest`): all 38 tests pass on Python 3.12 +
 4. Commit the notebook with its outputs plus `results/sagemaker_*.{csv,json}`.
 5. **Turn off:** the last cell deletes the endpoint (the url and key stay). **Turn on:** setup cells + the "Host the model" cell.
 
-Rough cost: training is a few `ml.m5.large` jobs of a few minutes each (cents). A serverless endpoint only costs per request. A normal `ml.t2.medium` endpoint is billed for every hour it runs, so delete it when not needed. Check the lab budget before the tuning job.
+Rough cost: training is a few `ml.m5.large` jobs of a few minutes each (cents). The `ml.t2.medium` endpoint is billed for every hour it runs, so delete it when not needed. Check the lab budget before the tuning job.
 
 ## 8. Risks and open questions
 | Risk | What we do |
 |---|---|
-| AWS Academy might block some of this (serverless inference, CloudFormation, API Gateway keys, Lambda using the LabRole, `ml.m5.large`) | Find out on day 1 by running notebook 3.5 to the end. Fallbacks: `SERVERLESS = False`; another instance type; build the API in the console with the same settings as `gateway.yaml` |
-| A serverless endpoint that has been idle can take longer to wake up than the 24 s the Lambda waits (API Gateway's hard limit is 29 s), so the first request after a quiet period gets a 502 | The backend retries once. On day 1, time a cold start. If it's too slow, switch to `SERVERLESS = False` (normal endpoint, always warm, paid per hour) during the two weeks of grading |
+| AWS Academy might block some of this (CloudFormation, API Gateway keys, Lambda using the LabRole, `ml.t2.medium`) | Find out by running notebook 3.5 to the end. Fallbacks: another instance type (`ml.m5.large`); build the API in the console with the same settings as `gateway.yaml` |
+| The endpoint costs money every hour during the two weeks of grading | Check the lab budget; turn it off with the TURN_OFF cell when nobody needs it |
+| Serverless cold start vs the 24 s Lambda timeout | Gone: serverless doesn't work with this container (section 4.6) |
 | The 1.9-0 image doesn't exist in our region | `IMAGE_TAG = '1.4-2-cpu-py3'` (tested) |
 | Precision is low at 90% recall | That's the data (noisy labels, AUC around 0.85). Discuss it in notebook 3, don't hide it |
 | A teammate's VS Code tab overwrites a notebook | Close or save the tab before someone else edits that file |
