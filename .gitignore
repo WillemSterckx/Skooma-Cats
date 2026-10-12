@@ -3,7 +3,7 @@ __pycache__/
 *.py[cod]
 .ipynb_checkpoints/
 .vscode/.ropeproject/
-# Citi Bike datasets
+# Citi Bike generated data
 CitiBike/citibike_data/raw/
 CitiBike/citibike_data/clean/
 CitiBike/citibike_data/parquet/
