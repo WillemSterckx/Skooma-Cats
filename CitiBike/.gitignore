@@ -1,0 +1,7 @@
+citibike_data/
+models/*.pkl
+models/*.log
+*.parquet
+.venv/
+__pycache__/
+.ipynb_checkpoints/
