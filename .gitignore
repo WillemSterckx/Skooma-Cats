@@ -3,7 +3,14 @@ __pycache__/
 *.py[cod]
 .ipynb_checkpoints/
 .vscode/.ropeproject/
-
+# Citi Bike datasets
+CitiBike/citibike_data/raw/
+CitiBike/citibike_data/clean/
+CitiBike/citibike_data/parquet/
+CitiBike/citibike_data/*.parquet
+CitiBike/citibike_data/*.csv
+CitiBike/data/raw/
+CitiBike/models/
 # Local notebook and tool output
 *.log
 *.tmp
