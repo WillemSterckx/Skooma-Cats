@@ -1,0 +1,44 @@
+name: train-and-deploy
+on:
+  push:
+    branches: [main]
+    paths:
+      - "training/**"
+      - "api/**"
+      - "gateway/**"
+      - "docker-compose.yml"
+      - ".github/workflows/train.yml"
+  workflow_dispatch:        # use this to retrain when the data changes
+
+concurrency:
+  group: train-and-deploy
+  cancel-in-progress: true
+
+jobs:
+  train-and-deploy:
+    runs-on: [self-hosted, windows]
+    timeout-minutes: 720
+    env:
+      DATA_GLOB: ${{ vars.DATA_GLOB }}
+      MIN_AUC: ${{ vars.MIN_AUC || '0.60' }}
+      ALLOWED_ORIGIN: ${{ vars.ALLOWED_ORIGIN }}
+      J_URL: ${{ vars.J_URL }}
+      TUNNEL_TOKEN: ${{ secrets.TUNNEL_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Train (fails the job if AUC < MIN_AUC)
+        shell: pwsh
+        run: |
+          $venv = "$env:USERPROFILE\.venvs\citibike"
+          if (-not (Test-Path $venv)) { python -m venv $venv; if ($LASTEXITCODE) { exit $LASTEXITCODE } }
+          & "$venv\Scripts\python" -m pip install -r training\requirements.txt
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          & "$venv\Scripts\python" training\train.py --out api\artifacts
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+
+      - name: Build images and (re)start containers
+        shell: pwsh
+        run: |
+          docker compose -p citibike up -d --build
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }

@@ -1,0 +1,37 @@
+services:
+  model:
+    build: ./api            # needs api/artifacts/ (created by training/train.py)
+    restart: unless-stopped
+    expose: ["8000"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  gateway:
+    build:
+      context: ./gateway
+      args:
+        J_URL: ${J_URL}
+    restart: unless-stopped
+    environment:
+      MODEL_URL: http://model:8000
+      ALLOWED_ORIGIN: ${ALLOWED_ORIGIN:-}
+    ports:
+      - "127.0.0.1:8080:8080"   # local testing only; the tunnel reaches it over the Docker network
+    depends_on:
+      model:
+        condition: service_healthy
+
+  ngrok:
+    image: ngrok/ngrok:latest
+    restart: unless-stopped
+    environment:
+      - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN}
+    command:
+      - "http"
+      - "gateway:8080"
+      - "--url=${NGROK_DOMAIN}"
+    depends_on:
+      - gateway
