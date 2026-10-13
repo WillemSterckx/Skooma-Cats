@@ -1,8 +1,10 @@
 .venv/
+.venv-pycaret/
 __pycache__/
 *.py[cod]
 .ipynb_checkpoints/
 .vscode/.ropeproject/
+
 # Citi Bike generated data
 CitiBike/citibike_data/raw/
 CitiBike/citibike_data/clean/
@@ -11,10 +13,14 @@ CitiBike/citibike_data/*.parquet
 CitiBike/citibike_data/*.csv
 CitiBike/data/raw/
 CitiBike/models/
+
 # Local notebook and tool output
 *.log
 *.tmp
 
+# Local only, not for the repo
+CLAUDE.md
+project_assignment.md
 
-
-
+# Trained models (rebuild with python Mushroom/model/train.py)
+Mushroom/artifacts/
