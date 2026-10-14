@@ -3,7 +3,6 @@ NB. citibike_api.ijs
 NB. Thin HTTP gateway in J. Forwards to the Python model service.
 NB.   GET  /                -> HTML form
 NB.   GET  /stations        -> proxied from model service
-NB.   GET  /rideable_types  -> proxied from model service
 NB.   GET  /health          -> gateway liveness
 NB.   POST /predict         -> JSON from model service
 NB. Accepts application/x-www-form-urlencoded OR application/json
@@ -36,7 +35,7 @@ ALLOWED_ORIGIN =: '' env_or 'ALLOWED_ORIGIN'
 MODEL_TMP      =: '/tmp/citibike_req.json'
 
 NB. Inputs the form/API must supply (all sent to the model as strings).
-FEATURES =: ' ' cut 'start_station_id rideable_type started_at'
+FEATURES =: ' ' cut 'start_station_id member_casual started_at ended_at'
 
 NB. ------------------------------------------------------------
 NB. HTTP helpers
@@ -122,7 +121,7 @@ build_response =: 3 : 0
   if. 0 < # ALLOWED_ORIGIN do.
     h =. h , 'Access-Control-Allow-Origin: ' , ALLOWED_ORIGIN , CRLF
     h =. h , 'Access-Control-Allow-Methods: GET, POST, OPTIONS' , CRLF
-    h =. h , 'Access-Control-Allow-Headers: Content-Type' , CRLF
+    h =. h , 'Access-Control-Allow-Headers: Content-Type, ngrok-skip-browser-warning' , CRLF
   end.
   h =. h , 'Connection: close' , CRLF
   h =. h , CRLF
@@ -296,7 +295,7 @@ handle_predict =: 3 : 0
 
   features =. extract_features kvpair
   if. features -: _1 do.
-    400 ; 'application/json' ; '{"error":"missing or empty fields: start_station_id, rideable_type, started_at"}' return.
+    400 ; 'application/json' ; '{"error":"missing or empty fields: start_station_id, member_casual, started_at, ended_at"}' return.
   end.
 
   'code body' =. call_model 'POST' ; '/predict' ; build_payload features
@@ -309,12 +308,13 @@ handle_predict =: 3 : 0
 form_page =: 3 : 0
   html =. ''
   html =. html , '<!DOCTYPE html>' , LF
-  html =. html , '<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Citi Bike Rider Predictor</title></head><body>' , LF
-  html =. html , '<h1>Citi Bike: member or casual?</h1>' , LF
+  html =. html , '<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Citi Bike e-bike predictor</title></head><body>' , LF
+  html =. html , '<h1>Citi Bike: electric bike or not?</h1>' , LF
   html =. html , '<form id="f">' , LF
   html =. html , '<label>Start station <select name="start_station_id" id="st" required></select></label><br/>' , LF
-  html =. html , '<label>Bike type <select name="rideable_type" id="rt" required></select></label><br/>' , LF
+  html =. html , '<label>Rider type <select name="member_casual" required><option value="member">member</option><option value="casual">casual</option></select></label><br/>' , LF
   html =. html , '<label>Start time (NYC) <input type="datetime-local" name="started_at" required /></label><br/>' , LF
+  html =. html , '<label>End time (NYC) <input type="datetime-local" name="ended_at" required /></label><br/>' , LF
   html =. html , '<button type="submit">Predict</button>' , LF
   html =. html , '</form>' , LF
   html =. html , '<pre id="out"></pre>' , LF
@@ -325,7 +325,6 @@ form_page =: 3 : 0
   html =. html , '  for (const x of items) { const o = document.createElement("option"); o.value = val(x); o.textContent = txt(x); el.appendChild(o); }' , LF
   html =. html , '}' , LF
   html =. html , 'fill("st", "/stations", x => x.id, x => x.name);' , LF
-  html =. html , 'fill("rt", "/rideable_types", x => x, x => x);' , LF
   html =. html , 'document.getElementById("f").addEventListener("submit", async (e) => {' , LF
   html =. html , '  e.preventDefault();' , LF
   html =. html , '  const body = new URLSearchParams(new FormData(e.target)).toString();' , LF
@@ -344,7 +343,6 @@ route =: 3 : 0
   case. 'GET' do.
     if.     path -: , '/'              do. 200 ; 'text/html; charset=utf-8' ; form_page ''
     elseif. path -: '/stations'        do. proxy_get '/stations'
-    elseif. path -: '/rideable_types'  do. proxy_get '/rideable_types'
     elseif. path -: '/health'          do. 200 ; 'application/json' ; '{"ok":true}'
     else.   404 ; 'text/plain' ; 'Not Found'
     end.
