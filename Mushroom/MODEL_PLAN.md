@@ -2,8 +2,8 @@
 
 The plan for the next step after cleaning: train and compare models, train and tune one on AWS, and host the best one so the backend can call it over HTTPS. Written on 9 Oct 2026, deadline 15 Oct.
 
-**What's already done and tested:** the model code (`model/`), the AWS front door (`aws/`), a local copy of the whole API for the backend team, the SageMaker notebook (`3.5MushroomSageMaker.ipynb`: training and tuning ran on AWS on 10 Oct on the 70/15/15 split, results in `results/sagemaker_*`) and 39 tests.
-**What's left:** notebooks 3 and 4 (the model comparison itself), the rest of notebook 3.5 (endpoint test, API stack, HTTPS call, Story), plugging the J backend into the url, and the retrain-on-push pipeline.
+**What's already done and tested:** the model code (`model/`), the AWS front door (`aws/`), a local copy of the whole API for the backend team, the SageMaker notebook (`3.5MushroomSageMaker.ipynb`: training and tuning ran on AWS on 10 Oct and again on 13 Oct in a new lab account, both on the 70/15/15 split; `results/sagemaker_*` is the 13 Oct run, which is the hosted model, and `results/*_run_1` the 10 Oct run; on 15 Oct the hosted model answered a real request over the HTTPS url) and 39 tests.
+**What's left:** notebooks 3 and 4 (the model comparison itself), rerun notebook 3.5's hosting part with the restart-safe cells and keep its outputs, then rewrite its tuning text and Story with the 13 Oct numbers, plugging the J backend into the url, and the retrain-on-push pipeline.
 
 ## 1. How it fits together
 
@@ -137,7 +137,7 @@ The course's "retrain on all data before deploying" would give a model the test 
 7. Test the leakage question from 4.1 (imputer inside vs outside the folds, on the same folds).
 8. Optional extension: K-Means on the scaled measurements, compared with the class and the stemless/giant groups.
 
-**3.5MushroomSageMaker.ipynb:** run it on AWS (section 7), keep the outputs, fill in the "to write after the run" cells with the real numbers.
+**3.5MushroomSageMaker.ipynb:** rerun the hosting part on AWS (section 7) and keep the outputs. The text after the tuning job and the Story still describe the 10 Oct run, so they get the 13 Oct numbers once that run's outputs are in the notebook.
 
 **4MushroomCompare.ipynb:** one table with every model on the same test set (accuracy, precision, recall, F1, ROC-AUC, PR-AUC, train vs test AUC, training time), including the AWS jobs from `results/sagemaker_tuning.csv` and `results/sagemaker_best.json`. ROC + PR curves in one plot, confusion matrices, fold-by-fold comparison. A difference smaller than the fold std is noise. The conclusion says which model is hosted and why. If that isn't the AWS forest, add its `--model` and parameters to `train.py` (rf, hgb and logreg are already there) and run the training cell again.
 
@@ -159,7 +159,7 @@ Also checked on 9 Oct (not part of `pytest`): all tests pass on Python 3.12 + sk
 
 ## 7. Running it on AWS
 1. AWS Academy → start the lab → SageMaker AI → Notebooks → **notebook instance** with IAM role **LabRole** → open JupyterLab → `git clone` the repo in its terminal → open `Mushroom/3.5MushroomSageMaker.ipynb`. (Studio didn't work for us: its domain setup tries to create new IAM roles, also one for Canvas, and the lab doesn't allow that.)
-2. Run the cells in order. The baseline job takes a few minutes (99 billed seconds on 10 Oct); the tuning job (12 jobs, 2 at a time) took about 17 minutes.
+2. The first time, run the cells in order. After that, the guide at the top of the notebook says which cells to run: the setup cells, then whichever part we need (every part after the setup runs on its own after a kernel restart). The baseline job takes a few minutes (99 billed seconds on 10 Oct); the tuning job (12 jobs, 2 at a time) took about 17 minutes.
 3. The stack cell prints the url. The key is saved in `~/mushroom_api_key.txt` on the SageMaker machine, **not** in the notebook output (rerun that cell to read it again). Share both with the backend team in private.
 4. Save the notebook and wait for the last cell to finish before downloading or committing it (on 10 Oct it was saved while the endpoint was still starting, so the cells after it had no output). Commit it with `results/sagemaker_*.{csv,json}`: push from the SageMaker terminal with a **classic** GitHub token (`repo` scope; fine-grained tokens only work on repos you own), or download the 3 files and push from a laptop.
 5. **Turn off:** the last cell deletes the endpoint (the url and key stay). **Turn on:** setup cells + the "Host the model" cell. That cell leaves a running endpoint alone and cleans up a failed one first, so it is always safe to run. To host a new model: turn off first.
@@ -169,7 +169,7 @@ Rough cost: training is a few `ml.m5.large` jobs of a few minutes each (cents). 
 ## 8. Risks and open questions
 | Risk | What we do |
 |---|---|
-| AWS Academy might block some of this (CloudFormation, API Gateway keys, Lambda using the LabRole) | Find out by running notebook 3.5 to the end. Fallback: build the API in the console with the same settings as `gateway.yaml`. (`ml.t2.medium` endpoints turned out to be blocked, see 4.6) |
+| AWS Academy might block some of this (CloudFormation, API Gateway keys, Lambda using the LabRole) | Checked on 15 Oct: the stack, the api key and the Lambda with the LabRole all work, and a POST to the url got a prediction back. The very first call after the stack was made got a 403 (the new key probably wasn't active yet), so the call cell now retries on 403. (`ml.t2.medium` endpoints turned out to be blocked, see 4.6) |
 | The endpoint costs money every hour during the two weeks of grading | Check the lab budget; turn it off with the TURN_OFF cell when nobody needs it |
 | Serverless cold start vs the 24 s Lambda timeout | Gone: serverless doesn't work with this container (section 4.6) |
 | The 1.9-0 image doesn't exist in our region | `IMAGE_TAG = '1.4-2-cpu-py3'` (tested) |
