@@ -3,7 +3,7 @@
 The plan for the next step after cleaning: train and compare models, train and tune one on AWS, and host the best one so the backend can call it over HTTPS. Written on 9 Oct 2026, deadline 15 Oct.
 
 **What's already done and tested:** the model code (`model/`), the AWS front door (`aws/`), a local copy of the whole API for the backend team, a web page served by the API itself (`aws/page.html`, open to anyone with the link), the SageMaker notebook (`3.5MushroomSageMaker.ipynb`: training and tuning ran on AWS on 10 Oct and again on 13 Oct in a new lab account, both on the 70/15/15 split; `results/sagemaker_*` is the 13 Oct run, which is the hosted model, and `results/*_run_1` the 10 Oct run; on 15 Oct the hosted model answered a real request over the HTTPS url) and 43 tests.
-**What's left:** notebooks 3 and 4 (the model comparison itself), rerun notebook 3.5's hosting part with the restart-safe cells and keep its outputs (its training and tuning outputs and text are from the 13 Oct run), plugging the J backend into the url, and the retrain-on-push pipeline.
+**What's left:** rerun notebook 3.5's hosting part with the restart-safe cells and keep its outputs (its training and tuning outputs and text are from the 13 Oct run), plugging the J backend into the url, and the retrain-on-push pipeline.
 
 ## 1. How it fits together
 
@@ -130,6 +130,10 @@ The course's "retrain on all data before deploying" would give a model the test 
 - **Not taken:** loading the model inside the Lambda itself (sklearn + pandas don't fit in a normal Lambda package, and it would no longer be "hosted on SageMaker"); hosting the model on the same VM as the J backend (allowed, but then AWS would only be used for training).
 
 ## 5. Plan for notebooks 3 and 4
+
+**Status 15 Oct:** done. Azaam built logistic regression (3), random forest (3.2) and gradient boosting (3.3) and compared them in notebook 4 (the forest wins). Aarya added `3.4MushroomSVM.ipynb` (SVM with an RBF kernel, a different kind of model: cross-validated AUC 0.807, validation 0.821) and Part 2 of notebook 4: the SVM and the SageMaker forest (rebuilt locally from `model/` with the settings in `results/sagemaker_best.json`, same validation numbers as the AWS job) next to Azaam's three, fold by fold and with a paired bootstrap. Result: the SageMaker forest and Azaam's forest are tied (validation 0.850 vs 0.852, test 0.833 vs 0.832, bootstrap ranges around 0), both forests beat the SVM (about 0.03 AUC, ranges below 0), the SVM is level with gradient boosting and far above logistic regression. So the hosted forest stays. The imputer leak in `mushroom_clean.csv` makes no difference (−0.002 AUC). The saved models need scikit-learn 1.6.1; `requirements.txt` pins 1.8.0, which can't load them.
+
+The plan as written on 10 Oct:
 
 **Status 10 Oct:** Azaam started notebook 3 (70/15/15 split saved to `datasets/`, dummy baseline, logistic regression) and `3.1MushroomPyCaret.ipynb` (random forest on top, val AUC 0.838). Notebook 3's saved outputs are stale: the score table shows logreg AUC 0.49, but a clean run of the same cells gives 0.699 (same as notebook 2), so it needs a "Restart + Run All". Its "What this tells us" cells are still empty. Both notebooks train on `mushroom_clean.csv`, which has the leakage from 4.1.
 
