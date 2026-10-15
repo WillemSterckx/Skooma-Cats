@@ -4,12 +4,15 @@ import json
 import threading
 import urllib.error
 import urllib.request
+from html.parser import HTMLParser
 
+import pandas as pd
 import pytest
 
 import lambda_function
 import local_api
-from conftest import EXAMPLES
+from conftest import EXAMPLES, RAW_CSV
+from mushroom_model import NUM_COLS, vocabulary
 
 
 class FakeRuntime:
@@ -77,6 +80,46 @@ def test_lambda_health_check_does_not_call_the_model(fake):
     assert runtime.calls == []
 
 
+def test_lambda_serves_the_page_without_calling_the_model(fake):
+    runtime = fake(fail=RuntimeError('should not be called'))
+    result = lambda_function.handler({'httpMethod': 'GET', 'resource': '/'}, None)
+    assert result['statusCode'] == 200 and result['headers']['Content-Type'].startswith('text/html')
+    assert '<form' in result['body'] and runtime.calls == []
+
+
+def test_lambda_ask_route_predicts_like_predict(fake):
+    fake(reply={'class': 'e'})
+    assert call({'httpMethod': 'POST', 'resource': '/ask', 'body': '{"habitat": "d"}'}) == (200, {'class': 'e'})
+
+
+class FormFields(HTMLParser):
+    # collects the name of every input and, per select, the option values the page offers
+    def __init__(self):
+        super().__init__()
+        self.inputs, self.selects, self.current = [], {}, None
+
+    def handle_starttag(self, tag, attrs):
+        attrs = dict(attrs)
+        if tag == 'input':
+            self.inputs.append(attrs['name'])
+        elif tag == 'select':
+            self.current = attrs['name']
+            self.selects[self.current] = []
+        elif tag == 'option':
+            self.selects[self.current].append(attrs['value'])
+
+
+def test_page_offers_exactly_what_the_model_accepts():
+    page = FormFields()
+    page.feed(lambda_function.PAGE.read_text(encoding='utf-8'))
+    vocab = vocabulary(pd.read_csv(RAW_CSV))
+    assert page.inputs == list(NUM_COLS)
+    assert set(page.selects) == set(vocab)
+    for col, values in page.selects.items():
+        # "don't know" first, then every letter the model knows, each once
+        assert values[0] == '' and sorted(values[1:]) == vocab[col], col
+
+
 @pytest.fixture
 def server(trained):
     httpd = local_api.make_server(str(trained['dir']), '127.0.0.1', 0, 'test-key')
@@ -115,3 +158,19 @@ def test_local_api_checks_key_and_path(server):
     assert http(server + '/nothing', '{}') == (403, {'message': 'Missing Authentication Token'})
     assert http(server + '/predict')[0] == 403
     assert http(server + '/health', '{}')[0] == 403
+    assert http(server + '/health', key=None)[0] == 403
+    assert http(server + '/ask')[0] == 403
+    assert http(server + '/', '{}')[0] == 403
+
+
+def test_local_api_page_and_ask_work_without_a_key(server):
+    with urllib.request.urlopen(server + '/', timeout=30) as r:
+        assert r.status == 200 and r.headers['Content-Type'].startswith('text/html')
+        assert 'Is this mushroom poisonous?' in r.read().decode()
+    # the page sends every field, blanks as "" and numbers as text
+    form = {'cap-diameter': '6.4', 'stem-height': '', 'stem-width': '', 'cap-shape': 'x', 'gill-color': '',
+            'spore-print-color': '', 'stem-surface': 'f', 'ring-type': '', 'habitat': 'd', 'season': 'a'}
+    status, answer = http(server + '/ask', json.dumps(form), key=None)
+    assert status == 200 and answer['class'] in ('e', 'p') and 0 <= answer['probability_poisonous'] <= 1
+    status, answer = http(server + '/ask', json.dumps({**form, 'cap-diameter': '-3'}), key=None)
+    assert status == 400 and 'cap-diameter' in answer['error']
