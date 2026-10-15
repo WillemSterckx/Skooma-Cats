@@ -3,9 +3,9 @@ on:
   push:
     branches: [main]
     paths:
-      - "training/**"
-      - "api/**"
-      - "gateway/**"
+      - "Hosting/training/**"
+      - "Hosting/api/**"
+      - "Hosting/gateway/**"
       - "docker-compose.yml"
       - ".github/workflows/train.yml"
   workflow_dispatch:        # use this to retrain when the data changes

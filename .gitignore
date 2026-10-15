@@ -14,7 +14,7 @@ CitiBike/models/
 # Local notebook and tool output
 *.log
 *.tmp
-api/artifacts/
+Hosting/api/artifacts/
 .env
 
 
