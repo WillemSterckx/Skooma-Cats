@@ -4,6 +4,7 @@ __pycache__/
 *.py[cod]
 .ipynb_checkpoints/
 .vscode/.ropeproject/
+.env
 
 # Citi Bike generated data
 CitiBike/citibike_data/raw/
@@ -17,6 +18,12 @@ CitiBike/models/
 # Local notebook and tool output
 *.log
 *.tmp
+
+# Hosted model
+Hosting/api/artifacts/
+
+
+
 
 # Local only, not for the repo
 CLAUDE.md

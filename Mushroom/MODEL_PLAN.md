@@ -2,14 +2,15 @@
 
 The plan for the next step after cleaning: train and compare models, train and tune one on AWS, and host the best one so the backend can call it over HTTPS. Written on 9 Oct 2026, deadline 15 Oct.
 
-**What's already done and tested:** the model code (`model/`), the AWS front door (`aws/`), a local copy of the whole API for the backend team, the SageMaker notebook (`3.5MushroomSageMaker.ipynb`: training and tuning ran on AWS on 10 Oct on the 70/15/15 split, results in `results/sagemaker_*`) and 39 tests.
-**What's left:** notebooks 3 and 4 (the model comparison itself), the rest of notebook 3.5 (endpoint test, API stack, HTTPS call, Story), plugging the J backend into the url, and the retrain-on-push pipeline.
+**What's already done and tested:** the model code (`model/`), the AWS front door (`aws/`), a local copy of the whole API for the backend team, a web page served by the API itself (`aws/page.html`, open to anyone with the link), the SageMaker notebook (`3.5MushroomSageMaker.ipynb`: training and tuning ran on AWS on 10 Oct and again on 13 Oct in a new lab account, both on the 70/15/15 split; `results/sagemaker_*` is the 13 Oct run, which is the hosted model, and `results/*_run_1` the 10 Oct run; on 15 Oct the hosted model answered a real request over the HTTPS url) and 43 tests.
+**What's left:** rerun notebook 3.5's hosting part with the restart-safe cells and keep its outputs (its training and tuning outputs and text are from the 13 Oct run), plugging the J backend into the url, and the retrain-on-push pipeline.
 
 ## 1. How it fits together
 
 ```mermaid
 flowchart LR
     U[webpage form] -->|POST form| J[J backend<br>API/mushroom_api.ijs]
+    P[our web page<br>GET /prod/] -->|POST /ask<br>no key| G
     J -->|HTTPS POST JSON<br>x-api-key header| G[API Gateway<br>/prod/predict]
     G --> L[Lambda<br>aws/lambda_function.py]
     L -->|invoke_endpoint| E[SageMaker endpoint<br>model/inference.py]
@@ -21,6 +22,7 @@ flowchart LR
 - **Training** runs `model/train.py` in the SageMaker scikit-learn container. It reads the **raw** csv, does the cleaning steps, fits the model and saves `model.joblib` + `model_meta.json`.
 - **Hosting** runs `model/inference.py` in the same container. It checks the input, runs the same cleaning steps and returns the prediction.
 - **API Gateway + Lambda** give a fixed public HTTPS url with an api key, because the endpoint itself only accepts requests signed with AWS keys (and AWS Academy keys expire after a few hours).
+- **The web page** (`aws/page.html`) is served by the same API at `/prod/`. Anyone with the link can use it: it posts the form to `/ask`, which predicts the same way as `/predict` but needs no key.
 - **Locally**, `aws/local_api.py` runs the exact Lambda and inference code on `http://127.0.0.1:8081`, with the same routes, key check and answers. The backend can be built against it now and switched to AWS by changing the url and the key.
 
 ## 2. Files
@@ -31,12 +33,13 @@ flowchart LR
 | `model/train.py` | Training script for SageMaker **and** for local runs (`python model/train.py`). Prints every metric as `name=value` |
 | `model/inference.py` | The four functions SageMaker calls when the model is hosted (`model_fn`, `input_fn`, `predict_fn`, `output_fn`) |
 | `aws/lambda_function.py` | Passes the HTTPS request to the endpoint and turns its answer into 200 / 400 / 500 / 502 |
-| `aws/gateway.yaml` | CloudFormation: API Gateway (`/predict`, `/health`, api key, 5 requests/s and 5000/day limit) + the Lambda |
+| `aws/gateway.yaml` | CloudFormation: API Gateway (`/predict` and `/health` with the api key and a 5000/day limit, the page `/` and `/ask` without a key, 2 requests/s for the whole stage) + the Lambda |
+| `aws/page.html` | The web page for people: the mushroom in plain words, the answer on a scale with the threshold. The Lambda serves it on `GET /` |
 | `aws/local_api.py` | The whole API on your own laptop, for building the backend |
 | `aws/metric_definitions.json` | Regexes SageMaker uses to read the metrics from the training log |
 | `aws/examples/*.json` | Example requests. The tests and the docs use these same files |
 | `3.5MushroomSageMaker.ipynb` | Runs on a SageMaker notebook instance: upload, baseline job, tuning job, endpoint, API stack |
-| `tests/` | 39 tests (section 6) |
+| `tests/` | 43 tests (section 6) |
 
 `model/` only holds the three files SageMaker needs, because the whole folder is uploaded as the source code of the job.
 
@@ -69,6 +72,8 @@ flowchart LR
 `class` is `e`/`p`, the same as the J backend's current `{"class": ...}` answer. `probability_poisonous` is what the page can show; `class` already uses the threshold (section 4.4).
 
 **Errors:** always JSON. 400 `{"error": "habitat must be one of [...] or empty, got 'zz'"}` for bad input (the message can be shown to the user). 403 `{"message": "Forbidden"}` for a missing or wrong key, and 403 `{"message": "Missing Authentication Token"}` for a route that doesn't exist (that's how API Gateway says "not found"; only `POST /predict` and `GET /health` exist). 502 `{"error": "model endpoint failed (...)"}` when the endpoint is down or still waking up (try again). 500 when the model itself crashed on the input (a bug on our side, retrying won't help). 429 when the rate limit is hit.
+
+**For people:** `GET <url>/` (the url without `predict`) is the web page, and `POST <url>/ask` takes the same body and gives the same answers as `/predict`. Neither needs a key. The whole api answers at most 2 requests a second (5 at once), so `/predict` gets a 429 above that too.
 
 **Health check:** `GET <url>/health` with the key → `{"status": "ok"}`. This doesn't touch the model.
 
@@ -109,7 +114,7 @@ Positive class = poisonous. Calling a poisonous mushroom edible is the dangerous
 
 First run on the 70/15/15 split (random forest, 200 trees, 10 Oct): val AUC 0.836, threshold 0.249 (val recall 0.90), then on test: AUC 0.835, recall 0.887, precision 0.52, accuracy 0.65. That's a lot of edible mushrooms flagged as poisonous. Test recall lands just under the 0.90 target: the validation part has only 284 poisonous mushrooms, so a threshold picked there moves a bit on new rows. Notebook 3 can compare it with a threshold picked on out-of-fold predictions of the whole train part (3500 rows). Train AUC 0.974 against test AUC 0.835, so the forest also overfits (bigger leaves are one of the things the tuning job tries). **This trade-off is the main thing to discuss in notebook 3**: a precision-recall curve, and which recall we defend (0.90? 0.95?). The target is one argument, so changing it doesn't need code changes.
 
-**On AWS (10 Oct):** the baseline job gives exactly the local numbers (val 0.8363, test 0.8346, threshold 0.2492), with sklearn 1.9.0 in the container. The tuning job's best forest (593 trees, leaf 1, max_features 0.80) gets val AUC 0.850, test AUC 0.842, threshold 0.187, test recall 0.901, precision 0.505. But its cross-validation AUC on train is 0.826 ± 0.022, the same as the baseline (0.827 ± 0.018), so the gain on validation is within the noise. Leaf size matters (leaves of 1–4 rows: 0.843–0.850, leaves of 8–14: 0.817–0.830), `max_features` hardly does. That's the hosted model.
+**On AWS (10 Oct):** the baseline job gives exactly the local numbers (val 0.8363, test 0.8346, threshold 0.2492), with sklearn 1.9.0 in the container. The tuning job's best forest (593 trees, leaf 1, max_features 0.80) gets val AUC 0.850, test AUC 0.842, threshold 0.187, test recall 0.901, precision 0.505. But its cross-validation AUC on train is 0.826 ± 0.022, the same as the baseline (0.827 ± 0.018), so the gain on validation is within the noise. Leaf size matters (leaves of 1–4 rows: 0.843–0.850, leaves of 8–14: 0.817–0.830), `max_features` hardly does. **Second run (13 Oct, new lab account):** the baseline gives the same numbers again. The tuning job picks a different forest (308 trees, leaf 2, max_features 0.77) with the same val AUC (0.8499): test AUC 0.840, threshold 0.184, test recall 0.915, precision 0.502, cv 0.827 ± 0.022. That one is the hosted model (`results/sagemaker_best.json`; the 10 Oct run is in `results/*_run_1`).
 
 The threshold is rounded **down** to 4 decimals, so rounding can't push the recall under the target. The answer's `class` is decided on the same rounded probability it shows, so the two never contradict each other.
 
@@ -121,9 +126,14 @@ The course's "retrain on all data before deploying" would give a model the test 
 - **Tried and blocked: `ml.t2.medium`**, the cheapest machine. The AWS Academy lab policy denies it (`AccessDeniedException ... explicit deny`), and we can't read that policy. So on 10 Oct we tested each type by creating an endpoint config and deleting it straight away (free, no machine starts). Allowed: `ml.m5.large`, `ml.m5.xlarge`, `ml.c5.large`, `ml.c5.xlarge`. Blocked: `ml.t2.medium`, `ml.t2.large`, `ml.m4.xlarge`, `ml.m6i.large`, `ml.c6i.large` (`ml.t3.medium` doesn't exist for endpoints). `ml.c5.large` is the cheapest allowed one, and its 4 GB is plenty: the biggest forest the tuner can pick takes about 230 MB.
 - **Tried and failed: serverless inference** (pay per request). On 10 Oct the endpoint crashed at startup. The scikit-learn container writes its web server config to `/etc/sagemaker-nginx.conf`, and serverless endpoints run the container on a read-only file system (`PermissionError: [Errno 13] Permission denied: '/etc/sagemaker-nginx.conf'` in the CloudWatch log). That path is fixed inside AWS's container code, so this container can't run serverless. Our own code never got to load.
 - **API Gateway + Lambda** instead of letting the J backend sign requests with AWS keys: AWS Academy keys expire after a few hours, so the backend would stop working during the two weeks of grading. An api key never expires, and the usage plan caps requests so a leaked key can't burn the budget.
+- **A web page served by the API itself, open to anyone with the link** (15 Oct, the team's choice: easiest for whoever grades it). Same address as the API, so the browser doesn't need CORS, and the page holds no key. The usage plan only covers routes with a key, so the stage gets its own limit of 2 requests/s; nonstop spam stays under 172,800 requests a day, less than a dollar of API Gateway + Lambda. **Not taken:** calling the AWS url from the team's Citi Bike website (the key would be public in its JavaScript, and our API doesn't answer the browser's CORS check), or routing it through their J gateway (the website team didn't need the mushroom model).
 - **Not taken:** loading the model inside the Lambda itself (sklearn + pandas don't fit in a normal Lambda package, and it would no longer be "hosted on SageMaker"); hosting the model on the same VM as the J backend (allowed, but then AWS would only be used for training).
 
 ## 5. Plan for notebooks 3 and 4
+
+**Status 15 Oct:** done. Azaam built logistic regression (3), random forest (3.2) and gradient boosting (3.3) and compared them in notebook 4 (the forest wins). Aarya added `3.4MushroomSVM.ipynb` (SVM with an RBF kernel, a different kind of model: cross-validated AUC 0.807, validation 0.821) and Part 2 of notebook 4: the SVM and the SageMaker forest (rebuilt locally from `model/` with the settings in `results/sagemaker_best.json`, same validation numbers as the AWS job) next to Azaam's three, fold by fold and with a paired bootstrap. Result: the SageMaker forest and Azaam's forest are tied (validation 0.850 vs 0.852, test 0.833 vs 0.832, bootstrap ranges around 0), both forests beat the SVM (about 0.03 AUC, ranges below 0), the SVM is level with gradient boosting and far above logistic regression. So the hosted forest stays. The imputer leak in `mushroom_clean.csv` makes no difference (−0.002 AUC). The saved models need scikit-learn 1.6.1; `requirements.txt` pins 1.8.0, which can't load them.
+
+The plan as written on 10 Oct:
 
 **Status 10 Oct:** Azaam started notebook 3 (70/15/15 split saved to `datasets/`, dummy baseline, logistic regression) and `3.1MushroomPyCaret.ipynb` (random forest on top, val AUC 0.838). Notebook 3's saved outputs are stale: the score table shows logreg AUC 0.49, but a clean run of the same cells gives 0.699 (same as notebook 2), so it needs a "Restart + Run All". Its "What this tells us" cells are still empty. Both notebooks train on `mushroom_clean.csv`, which has the leakage from 4.1.
 
@@ -137,7 +147,7 @@ The course's "retrain on all data before deploying" would give a model the test 
 7. Test the leakage question from 4.1 (imputer inside vs outside the folds, on the same folds).
 8. Optional extension: K-Means on the scaled measurements, compared with the class and the stemless/giant groups.
 
-**3.5MushroomSageMaker.ipynb:** run it on AWS (section 7), keep the outputs, fill in the "to write after the run" cells with the real numbers.
+**3.5MushroomSageMaker.ipynb:** rerun the hosting part on AWS (section 7) and keep the outputs. The training and tuning outputs and their text are from the 13 Oct run.
 
 **4MushroomCompare.ipynb:** one table with every model on the same test set (accuracy, precision, recall, F1, ROC-AUC, PR-AUC, train vs test AUC, training time), including the AWS jobs from `results/sagemaker_tuning.csv` and `results/sagemaker_best.json`. ROC + PR curves in one plot, confusion matrices, fold-by-fold comparison. A difference smaller than the fold std is noise. The conclusion says which model is hosted and why. If that isn't the AWS forest, add its `--model` and parameters to `train.py` (rf, hgb and logreg are already there) and run the training cell again.
 
@@ -151,6 +161,7 @@ From `Mushroom/`: `python -m pytest tests -q` (about 20 seconds). They prove:
 - every example in `aws/examples/` gets the documented answer; 200 real rows sent as JSON get exactly the same probabilities as the pipeline gives directly; 11 kinds of bad input each get a clear 400 message
 - the Lambda: 200 / 400 / 500 (model crash) / 502 (endpoint down) / base64 body (also broken base64) / health check that doesn't call the model; and it doesn't leak internal error text
 - the local API over real HTTP: key check (403), unknown route or wrong method (403 "Missing Authentication Token", like API Gateway), predict, batch, error
+- the web page: the Lambda serves it without calling the model, and its dropdowns offer exactly the letters the model knows (so a new letter in the data can't silently go missing from the page); `/ask` works without a key and `/predict` still needs one. Also checked in a headless Chrome (not part of `pytest`): an edible and a poisonous answer, the 400 and 502 messages, light and dark mode, phone width
 - `train.py` accepts the extra arguments a tuning job adds (`--_tuning_objective_metric`). Without that every tuning job would have crashed; the code review caught it
 
 Also checked on 9 Oct (not part of `pytest`): all tests pass on Python 3.12 + sklearn 1.8 (our laptops), on the exact versions of the 1.9-0 container and on the 1.4-2 fallback. `gateway.yaml` passes `cfn-lint`. Every cell of notebook 3.5 was run against the real SageMaker SDK v2.257.7 with AWS stubbed out, so every SDK call has valid arguments. The curl commands above were run against `local_api.py`.
@@ -159,7 +170,7 @@ Also checked on 9 Oct (not part of `pytest`): all tests pass on Python 3.12 + sk
 
 ## 7. Running it on AWS
 1. AWS Academy → start the lab → SageMaker AI → Notebooks → **notebook instance** with IAM role **LabRole** → open JupyterLab → `git clone` the repo in its terminal → open `Mushroom/3.5MushroomSageMaker.ipynb`. (Studio didn't work for us: its domain setup tries to create new IAM roles, also one for Canvas, and the lab doesn't allow that.)
-2. Run the cells in order. The baseline job takes a few minutes (99 billed seconds on 10 Oct); the tuning job (12 jobs, 2 at a time) took about 17 minutes.
+2. The first time, run the cells in order. After that, the guide at the top of the notebook says which cells to run: the setup cells, then whichever part we need (every part after the setup runs on its own after a kernel restart). The baseline job takes a few minutes (99 billed seconds on 10 Oct); the tuning job (12 jobs, 2 at a time) took about 17 minutes.
 3. The stack cell prints the url. The key is saved in `~/mushroom_api_key.txt` on the SageMaker machine, **not** in the notebook output (rerun that cell to read it again). Share both with the backend team in private.
 4. Save the notebook and wait for the last cell to finish before downloading or committing it (on 10 Oct it was saved while the endpoint was still starting, so the cells after it had no output). Commit it with `results/sagemaker_*.{csv,json}`: push from the SageMaker terminal with a **classic** GitHub token (`repo` scope; fine-grained tokens only work on repos you own), or download the 3 files and push from a laptop.
 5. **Turn off:** the last cell deletes the endpoint (the url and key stay). **Turn on:** setup cells + the "Host the model" cell. That cell leaves a running endpoint alone and cleans up a failed one first, so it is always safe to run. To host a new model: turn off first.
@@ -169,12 +180,13 @@ Rough cost: training is a few `ml.m5.large` jobs of a few minutes each (cents). 
 ## 8. Risks and open questions
 | Risk | What we do |
 |---|---|
-| AWS Academy might block some of this (CloudFormation, API Gateway keys, Lambda using the LabRole) | Find out by running notebook 3.5 to the end. Fallback: build the API in the console with the same settings as `gateway.yaml`. (`ml.t2.medium` endpoints turned out to be blocked, see 4.6) |
+| AWS Academy might block some of this (CloudFormation, API Gateway keys, Lambda using the LabRole) | Checked on 15 Oct: the stack, the api key and the Lambda with the LabRole all work, and a POST to the url got a prediction back. The very first call after the stack was made got a 403 (the new key probably wasn't active yet), so the call cell now retries on 403. (`ml.t2.medium` endpoints turned out to be blocked, see 4.6) |
 | The endpoint costs money every hour during the two weeks of grading | Check the lab budget; turn it off with the TURN_OFF cell when nobody needs it |
 | Serverless cold start vs the 24 s Lambda timeout | Gone: serverless doesn't work with this container (section 4.6) |
 | The 1.9-0 image doesn't exist in our region | `IMAGE_TAG = '1.4-2-cpu-py3'` (tested) |
 | Precision is low at 90% recall | That's the data (noisy labels, AUC around 0.85). Discuss it in notebook 3, don't hide it |
 | A teammate's VS Code tab overwrites a notebook | Close or save the tab before someone else edits that file |
+| Anyone with the page link can use the model | That's the point of the page. The stage limit (2 requests/s) caps the cost at under a dollar a day; turning the endpoint off stops it completely |
 | The url or key end up in git | Environment variables in the backend; the notebook only prints the last 4 characters |
 
 ## 9. Timeline (deadline Thu 15 Oct, midnight)

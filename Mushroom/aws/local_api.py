@@ -24,27 +24,33 @@ class LocalRuntime:
         return {'Body': io.BytesIO(body.encode('utf-8'))}
 
 
+# same routes as the api gateway stage in gateway.yaml: route -> does it need the api key
+ROUTES = {('POST', '/predict'): True, ('GET', '/health'): True, ('GET', '/'): False, ('POST', '/ask'): False}
+
+
 class Handler(BaseHTTPRequestHandler):
     api_key = None
 
     def answer(self, method):
-        # same routes and answers as the api gateway stage in gateway.yaml, which says 403 for a route it doesn't have
-        if (method, self.path.split('?')[0]) not in (('POST', '/predict'), ('GET', '/health')):
-            return self.send(403, {'message': 'Missing Authentication Token'})
-        if self.headers.get('x-api-key') != self.api_key:
-            return self.send(403, {'message': 'Forbidden'})
         try:
             length = int(self.headers.get('Content-Length') or 0)
         except ValueError:
             return self.send(400, {'message': 'bad Content-Length'})
+        # read the body before any answer, closing a socket with unread data makes the client see a reset instead of our 403
         body = self.rfile.read(length).decode('utf-8', errors='replace')
-        result = lambda_function.handler({'httpMethod': method, 'body': body, 'isBase64Encoded': False}, None)
-        self.send(result['statusCode'], json.loads(result['body']))
+        path = self.path.split('?')[0]
+        # api gateway says 403 for a route it doesn't have
+        if (method, path) not in ROUTES:
+            return self.send(403, {'message': 'Missing Authentication Token'})
+        if ROUTES[(method, path)] and self.headers.get('x-api-key') != self.api_key:
+            return self.send(403, {'message': 'Forbidden'})
+        result =lambda_function.handler({'httpMethod': method, 'resource': path, 'body': body, 'isBase64Encoded': False}, None)
+        self.send(result['statusCode'], result['body'], result['headers']['Content-Type'])
 
-    def send(self, status, payload):
-        data = json.dumps(payload).encode('utf-8')
+    def send(self, status, payload, content_type='application/json'):
+        data = (payload if isinstance(payload, str) else json.dumps(payload)).encode('utf-8')
         self.send_response(status)
-        self.send_header('Content-Type', 'application/json')
+        self.send_header('Content-Type', content_type)
         self.send_header('Content-Length', str(len(data)))
         self.end_headers()
         self.wfile.write(data)
@@ -72,4 +78,5 @@ if __name__ == '__main__':
     args = parser.parse_args()
     server = make_server(args.model_dir, args.host, args.port, args.api_key)
     print(f'mushroom model api on http://{args.host}:{args.port}/predict (header x-api-key: {args.api_key})')
+    print(f'web page on http://{args.host}:{args.port}/')
     server.serve_forever()
