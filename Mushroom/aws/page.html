@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Is this mushroom poisonous?</title>
+<style>
+  :root {
+    --ground: #eef2ee; --paper: #f9fbf8; --ink: #1f2a24; --muted: #56655b; --line: #c4cfc6;
+    --edible: #1b9e77; --poison: #d95f02; --focus: #2f6f9f;
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground: #141b17; --paper: #1c2520; --ink: #e2eae4; --muted: #9db0a3; --line: #34443a;
+      --edible: #2fbf93; --poison: #f07a2a; --focus: #7fb6e0;
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--ground); color: var(--ink); font: 1rem/1.5 var(--sans); }
+  main { max-width: 40rem; margin: 0 auto; padding: 2.5rem 1rem 3rem; }
+  h1 { font: 600 2.1rem/1.15 var(--serif); margin: 0 0 .75rem; letter-spacing: -.01em; }
+  .lead { margin: 0 0 2rem; color: var(--muted); max-width: 34rem; }
+  fieldset { border: 0; border-top: 1px solid var(--line); margin: 0 0 1.5rem; padding: 1rem 0 0;
+             display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: .9rem 1.25rem; }
+  legend { font: 600 1.25rem/1.2 var(--serif); padding: 0 .5rem 0 0; }
+  label { display: block; font-weight: 600; font-size: .95rem; }
+  input, select { display: block; width: 100%; margin-top: .35rem; padding: .6rem .7rem; font: inherit; font-weight: 400;
+                  color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: 6px; }
+  input:focus-visible, select:focus-visible, button:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+  .hint { grid-column: 1 / -1; margin: -.25rem 0 0; font-size: .875rem; color: var(--muted); }
+  button { font: 600 1.05rem/1 var(--sans); padding: .9rem 1.6rem; border: 0; border-radius: 6px; cursor: pointer;
+           color: var(--ground); background: var(--ink); }
+  button:disabled { opacity: .6; cursor: progress; }
+  #result { margin-top: 2.5rem; padding: .25rem 0 .25rem 1.25rem; border-left: 6px solid var(--zone); }
+  #result.edible { --zone: var(--edible); }
+  #result.poisonous { --zone: var(--poison); }
+  .verdict { font: 600 1.9rem/1.2 var(--serif); margin: 0 0 1.75rem; }
+  .scale { position: relative; height: 14px; border-radius: 7px; margin: 2.25rem 0 .4rem;
+           background: linear-gradient(to right, var(--edible) 0 var(--t), var(--poison) var(--t) 100%); }
+  .threshold { position: absolute; left: var(--t); bottom: 100%; padding: 0 0 .35rem .4rem; white-space: nowrap;
+               font-size: .85rem; color: var(--muted); border-left: 2px solid var(--ink); }
+  .pin { position: absolute; left: var(--p); top: 50%; width: 24px; height: 24px; border-radius: 50%;
+         background: var(--paper); border: 4px solid var(--ink); transform: translate(-50%, -50%); transition: left .6s ease-out; }
+  .ends { display: flex; justify-content: space-between; font-size: .85rem; color: var(--muted); }
+  #explain { margin: 1rem 0 .5rem; max-width: 34rem; }
+  .small { font-size: .85rem; color: var(--muted); margin: 0; }
+  .error { color: var(--poison); font-weight: 600; min-height: 1.5rem; margin: 1.25rem 0 0; }
+  footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--line); font-size: .875rem; color: var(--muted); max-width: 34rem; }
+  @media (prefers-reduced-motion: reduce) { .pin { transition: none; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Is this mushroom poisonous?</h1>
+  <p class="lead">Fill in what you can see. Every field is optional, so leave out what you don't know: our model learned from mushrooms with gaps too.</p>
+
+  <form id="form">
+    <fieldset>
+      <legend>Cap</legend>
+      <label>Diameter in cm
+        <input name="cap-diameter" type="number" min="0" step="any" inputmode="decimal" placeholder="for example 6">
+      </label>
+      <label>Shape
+        <select name="cap-shape">
+          <option value="">Don't know</option>
+          <option value="b">bell</option>
+          <option value="c">conical</option>
+          <option value="x">convex</option>
+          <option value="f">flat</option>
+          <option value="o">other</option>
+          <option value="p">spherical</option>
+          <option value="s">sunken</option>
+        </select>
+      </label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Gills</legend>
+      <label>Gill color
+        <select name="gill-color">
+          <option value="">Don't know</option>
+          <option value="k">black</option>
+          <option value="n">brown</option>
+          <option value="b">buff</option>
+          <option value="g">gray</option>
+          <option value="r">green</option>
+          <option value="o">orange</option>
+          <option value="p">pink</option>
+          <option value="u">purple</option>
+          <option value="e">red</option>
+          <option value="w">white</option>
+          <option value="y">yellow</option>
+          <option value="f">none</option>
+        </select>
+      </label>
+      <label>Spore print color
+        <select name="spore-print-color">
+          <option value="">Don't know</option>
+          <option value="k">black</option>
+          <option value="n">brown</option>
+          <option value="g">gray</option>
+          <option value="r">green</option>
+          <option value="p">pink</option>
+          <option value="u">purple</option>
+          <option value="w">white</option>
+        </select>
+      </label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Stem</legend>
+      <label>Height in cm
+        <input name="stem-height" type="number" min="0" step="any" inputmode="decimal" placeholder="for example 7">
+      </label>
+      <label>Width in mm
+        <input name="stem-width" type="number" min="0" step="any" inputmode="decimal" placeholder="for example 15">
+      </label>
+      <label>Surface
+        <select name="stem-surface">
+          <option value="">Don't know</option>
+          <option value="i">fibrous</option>
+          <option value="g">grooves</option>
+          <option value="y">scaly</option>
+          <option value="h">shiny</option>
+          <option value="k">silky</option>
+          <option value="s">smooth</option>
+          <option value="t">sticky</option>
+          <option value="f">none (no stem)</option>
+        </select>
+      </label>
+      <label>Ring
+        <select name="ring-type">
+          <option value="">Don't know</option>
+          <option value="e">evanescent</option>
+          <option value="r">flaring</option>
+          <option value="g">grooved</option>
+          <option value="l">large</option>
+          <option value="m">movable</option>
+          <option value="p">pendant</option>
+          <option value="z">zone</option>
+          <option value="f">none</option>
+        </select>
+      </label>
+      <p class="hint">Note the units: the stem's width is in millimetres, its height in centimetres.</p>
+    </fieldset>
+
+    <fieldset>
+      <legend>Where and when</legend>
+      <label>Habitat
+        <select name="habitat">
+          <option value="">Don't know</option>
+          <option value="g">grasses</option>
+          <option value="h">heaths</option>
+          <option value="l">leaves</option>
+          <option value="m">meadows</option>
+          <option value="p">paths</option>
+          <option value="u">urban</option>
+          <option value="w">waste ground</option>
+          <option value="d">woods</option>
+        </select>
+      </label>
+      <label>Season
+        <select name="season">
+          <option value="">Don't know</option>
+          <option value="s">spring</option>
+          <option value="u">summer</option>
+          <option value="a">autumn</option>
+          <option value="w">winter</option>
+        </select>
+      </label>
+    </fieldset>
+
+    <button type="submit">Check this mushroom</button>
+  </form>
+
+  <p class="error" id="error" role="alert"></p>
+
+  <section id="result" aria-live="polite" hidden>
+    <p class="verdict" id="verdict"></p>
+    <div class="scale" id="scale" role="img">
+      <span class="threshold" id="threshold"></span>
+      <span class="pin"></span>
+    </div>
+    <div class="ends"><span>0%</span><span>100% poisonous</span></div>
+    <p id="explain"></p>
+    <p class="small" id="version"></p>
+  </section>
+
+  <noscript><p class="error">This page needs JavaScript to ask the model.</p></noscript>
+
+  <footer>
+    Made by Skooma-Cats for a Thomas More machine learning project. On our test set the model catches about 9 out of 10 poisonous mushrooms, but about half of the mushrooms it calls poisonous are edible. Never eat a wild mushroom because a website said it was edible.
+  </footer>
+</main>
+
+<script>
+  const form = document.getElementById('form');
+  const button = form.querySelector('button');
+  const result = document.getElementById('result');
+  const error = document.getElementById('error');
+  // the page lives at /prod/ on AWS and at / locally, its form goes to "ask" next to it
+  const base = location.pathname.endsWith('/') ? location.pathname : location.pathname + '/';
+  const percent = (x) => (x * 100).toFixed(1) + '%';
+
+  function problem(status, answer) {
+    if (status === 400) return 'Check the form: ' + answer.error;
+    if (status === 429) return 'Too many requests at once. Wait a few seconds and try again.';
+    if (status === 502) return 'The model is switched off right now. Try again later.';
+    if (status === 500) return 'The model could not handle this mushroom (error 500).';
+    return 'The model did not answer (error ' + status + '). Try again later.';
+  }
+
+  function show(answer) {
+    const poisonous = answer.class === 'p';
+    const scale = document.getElementById('scale');
+    result.className = poisonous ? 'poisonous' : 'edible';
+    document.getElementById('verdict').textContent = poisonous ? 'Probably poisonous' : 'Probably edible';
+    scale.style.setProperty('--t', answer.threshold * 100 + '%');
+    scale.style.setProperty('--p', answer.probability_poisonous * 100 + '%');
+    scale.setAttribute('aria-label', percent(answer.probability_poisonous) + ' chance of poisonous, threshold ' + percent(answer.threshold));
+    document.getElementById('threshold').textContent = 'poisonous from ' + percent(answer.threshold);
+    document.getElementById('explain').textContent = 'The model puts the chance that it is poisonous at ' + percent(answer.probability_poisonous)
+      + '. We already call a mushroom poisonous from ' + percent(answer.threshold)
+      + ', because missing a poisonous mushroom is worse than throwing away an edible one.';
+    document.getElementById('version').textContent = 'Model ' + answer.model_version;
+    result.hidden = false;
+  }
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    error.textContent = '';
+    button.disabled = true;
+    button.textContent = 'Checking...';
+    try {
+      const response = await fetch(base + 'ask', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(Object.fromEntries(new FormData(form))),
+      });
+      const answer = await response.json().catch(() => ({}));
+      if (response.ok) {
+        show(answer);
+      } else {
+        result.hidden = true;
+        error.textContent = problem(response.status, answer);
+      }
+    } catch (e) {
+      result.hidden = true;
+      error.textContent = 'Could not reach the model. Check your connection and try again.';
+    } finally {
+      button.disabled = false;
+      button.textContent = 'Check this mushroom';
+    }
+  });
+</script>
+</body>
+</html>
