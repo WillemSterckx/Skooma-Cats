@@ -15,7 +15,7 @@ Run the notebooks in `Mushroom/` in order:
 2. `2MushroomClean.ipynb`: every cleaning step explained and checked with cross-validated ROC-AUC (logistic regression + random forest).
 3. `2.5MushroomGraphless.ipynb`: the same cleaning in one short notebook without graphs. Both write the same `datasets/mushroom_clean.csv`.
 4. `3MushroomPredict.ipynb` and `4MushroomCompare.ipynb`: models and comparison (in progress).
-5. `3.5MushroomSageMaker.ipynb`: training, tuning and hosting the model on AWS SageMaker (runs in SageMaker Studio).
+5. `3.5MushroomSageMaker.ipynb`: training, tuning and hosting the model on AWS SageMaker (runs on a SageMaker notebook instance). The guide at the top of the notebook explains which cells to run and how to put the model online.
 
 The model code is in `Mushroom/model/` (training script + hosting code), the HTTPS front door in `Mushroom/aws/`, and the tests in `Mushroom/tests/` (`python -m pytest tests -q` from `Mushroom/`). `Mushroom/MODEL_PLAN.md` explains the plan, the API contract for the backend and every choice.
 
