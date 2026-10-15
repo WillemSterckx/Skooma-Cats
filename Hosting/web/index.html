@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Citi Bike: electric bike or not?</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --text:#1c2430; --muted:#667085; --accent:#1f6feb; --line:#d9dee5; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#12161c; --card:#1b212a; --text:#e8ecf1; --muted:#9aa5b4; --accent:#58a6ff; --line:#2d3643; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:24px 16px; background:var(--bg); color:var(--text);
+         font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width:480px; margin:0 auto; background:var(--card); border:1px solid var(--line);
+         border-radius:12px; padding:24px; }
+  h1 { font-size:1.35rem; margin:0 0 4px; }
+  p.sub { margin:0 0 20px; color:var(--muted); font-size:.92rem; }
+  label { display:block; font-size:.9rem; margin:14px 0 6px; font-weight:600; }
+  input, select, button { width:100%; padding:10px 12px; font-size:1rem; border-radius:8px;
+         border:1px solid var(--line); background:var(--bg); color:var(--text); }
+  button { margin-top:20px; background:var(--accent); border-color:var(--accent); color:#fff;
+           font-weight:600; cursor:pointer; }
+  button:disabled { opacity:.6; cursor:wait; }
+  #result { margin-top:22px; display:none; }
+  .answer { font-size:1.25rem; font-weight:700; }
+  .bar { height:10px; background:var(--line); border-radius:99px; overflow:hidden; margin:10px 0 6px; }
+  .bar > div { height:100%; background:var(--accent); width:0; transition:width .4s; }
+  .muted { color:var(--muted); font-size:.85rem; }
+  .error { color:#d1242f; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Electric bike or not?</h1>
+  <p class="sub">Guesses whether a finished Citi Bike ride that started at a dock used an electric bike.</p>
+
+  <form id="f">
+    <label for="station">Start station</label>
+    <input id="station" list="stations" placeholder="Loading stations..." autocomplete="off" required disabled>
+    <datalist id="stations"></datalist>
+
+    <label for="rider">Rider type</label>
+    <select id="rider">
+      <option value="member">Member</option>
+      <option value="casual">Casual</option>
+    </select>
+
+    <label for="when">Start time (New York time)</label>
+    <input id="when" type="datetime-local" required>
+
+    <label for="until">End time (New York time)</label>
+    <input id="until" type="datetime-local" required>
+    <p class="muted">The ride must last between 1 minute and 24 hours.</p>
+
+    <button id="go" type="submit" disabled>Predict</button>
+  </form>
+
+  <div id="result" aria-live="polite">
+    <div class="answer" id="answer"></div>
+    <div class="bar"><div id="fill"></div></div>
+    <div class="muted" id="detail"></div>
+  </div>
+  <p class="error" id="error"></p>
+</main>
+
+<script>
+  // === The only thing you need to edit: your ngrok domain (no trailing slash) ===
+  const API_BASE = "https://swoosh-dropper-defuse.ngrok-free.dev";
+  // ==============================================================================
+
+  const HEADERS = { "ngrok-skip-browser-warning": "1" };   // skips ngrok's free-plan warning page
+  const $ = (id) => document.getElementById(id);
+  const labelToId = new Map();
+
+  // defaults: ride ended now, started 15 minutes ago
+  const localIso = (ms) => new Date(ms - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  $("until").value = localIso(Date.now());
+  $("when").value = localIso(Date.now() - 15 * 60000);
+
+  function showError(msg) { $("error").textContent = msg; $("result").style.display = "none"; }
+
+  async function loadStations() {
+    try {
+      const r = await fetch(API_BASE + "/stations", { headers: HEADERS });
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const stations = await r.json();
+      const counts = {};
+      stations.forEach((s) => { counts[s.name] = (counts[s.name] || 0) + 1; });
+      for (const s of stations) {
+        const label = counts[s.name] > 1 ? `${s.name} [${s.id}]` : s.name;
+        labelToId.set(label, s.id);
+        const o = document.createElement("option");
+        o.value = label;
+        $("stations").appendChild(o);
+      }
+      $("station").disabled = false;
+      $("station").placeholder = "Start typing a station name...";
+      $("go").disabled = false;
+    } catch (e) {
+      showError("Could not reach the API. Is the server running? (" + e.message + ")");
+    }
+  }
+
+  $("f").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    $("error").textContent = "";
+    const id = labelToId.get($("station").value);
+    if (!id) { showError("Pick a station from the list."); return; }
+
+    const minutes = (new Date($("until").value) - new Date($("when").value)) / 60000;
+    if (!(minutes >= 1 && minutes <= 1440)) { showError("End time must be 1 minute to 24 hours after the start time."); return; }
+
+    const body = new URLSearchParams({
+      start_station_id: id,
+      member_casual: $("rider").value,
+      started_at: $("when").value,
+      ended_at: $("until").value,
+    }).toString();
+
+    $("go").disabled = true;
+    try {
+      const r = await fetch(API_BASE + "/predict", {
+        method: "POST",
+        headers: { ...HEADERS, "Content-Type": "application/x-www-form-urlencoded" },
+        body,
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || JSON.stringify(data.detail || data));
+      const pct = Math.round(data.probability_electric * 100);
+      $("answer").textContent = data.prediction === "electric_bike" ? "Likely an electric bike" : "Likely a classic bike";
+      $("fill").style.width = pct + "%";
+      $("detail").textContent = `${pct}% chance of an electric bike (model ${data.model_version})`;
+      $("result").style.display = "block";
+    } catch (err) {
+      showError("Prediction failed: " + err.message);
+    } finally {
+      $("go").disabled = false;
+    }
+  });
+
+  loadStations();
+</script>
+</body>
+</html>
