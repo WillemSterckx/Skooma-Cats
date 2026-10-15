@@ -13,3 +13,6 @@ duckdb
 flaml[automl]
 lightgbm
 xgboost
+fastapi
+uvicorn
+tzdata
