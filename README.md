@@ -14,7 +14,7 @@ Run the notebooks in `Mushroom/` in order:
 1. `1MushroomScrape.ipynb`: load the teacher's noisy dataset and explore it (class balance, missing values, noise columns, outliers, chi-square / Cramér's V, Mann-Whitney, stemless and giant groups).
 2. `2MushroomClean.ipynb`: every cleaning step explained and checked with cross-validated ROC-AUC (logistic regression + random forest).
 3. `2.5MushroomGraphless.ipynb`: the same cleaning in one short notebook without graphs. Both write the same `datasets/mushroom_clean.csv`.
-4. `3MushroomPredict.ipynb` and `4MushroomCompare.ipynb`: models and comparison (in progress).
+4. `3MushroomPredict.ipynb` (split + logistic regression), `3.1MushroomPyCaret.ipynb`, `3.2MushroomRandomForest.ipynb`, `3.3MushroomGradientBoosting.ipynb` and `3.4MushroomSVM.ipynb` (SVM with an RBF kernel): one notebook per model. `4MushroomCompare.ipynb` compares them; its Part 2 adds the SVM and the SageMaker forest, with fold-by-fold and bootstrap checks. Notebooks 3.2 to 4 need scikit-learn 1.6.1, the version the saved models in `models/` were made with.
 5. `3.5MushroomSageMaker.ipynb`: training, tuning and hosting the model on AWS SageMaker (runs on a SageMaker notebook instance). The guide at the top of the notebook explains which cells to run and how to put the model online. Once it is online, anyone can use the model on a web page at the API's url (`aws/page.html`).
 
 The model code is in `Mushroom/model/` (training script + hosting code), the HTTPS front door in `Mushroom/aws/`, and the tests in `Mushroom/tests/` (`python -m pytest tests -q` from `Mushroom/`). `Mushroom/MODEL_PLAN.md` explains the plan, the API contract for the backend and every choice.
