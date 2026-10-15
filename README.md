@@ -71,3 +71,5 @@ Boosting beat bagging in the FLAML search, and the tuned XGBoost is about 15% be
 The year matters: dropping it raised the error from 4.09 to 4.84, because demand grows every year. The station clusters from 06 did not improve the model (4.095 against 4.094), because the location already identifies the station.
 The largest misses are days when the model predicts far too many trips (the ten worst days are all over-predictions). We think weather is the main missing information; this is not tested yet.
 Limits: no weather, no past demand, only 100 stations, and no events or disruptions in the features.
+
+The locally hosted model can be found at https://skoomacats.sinners.be/
