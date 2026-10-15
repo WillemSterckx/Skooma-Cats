@@ -50,6 +50,13 @@ Resources:
       ParentId: !GetAtt Api.RootResourceId
       PathPart: health
 
+  AskResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref Api
+      ParentId: !GetAtt Api.RootResourceId
+      PathPart: ask
+
   PredictMethod:
     Type: AWS::ApiGateway::Method
     Properties:
@@ -76,6 +83,33 @@ Resources:
         IntegrationHttpMethod: POST
         Uri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${PredictFunction.Arn}/invocations
 
+  # the web page and the route its form posts to are open to anyone with the link, so no api key
+  PageMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref Api
+      ResourceId: !GetAtt Api.RootResourceId
+      HttpMethod: GET
+      AuthorizationType: NONE
+      ApiKeyRequired: false
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${PredictFunction.Arn}/invocations
+
+  AskMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref Api
+      ResourceId: !Ref AskResource
+      HttpMethod: POST
+      AuthorizationType: NONE
+      ApiKeyRequired: false
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${PredictFunction.Arn}/invocations
+
   InvokePermission:
     Type: AWS::Lambda::Permission
     Properties:
@@ -86,7 +120,7 @@ Resources:
 
   Deployment:
     Type: AWS::ApiGateway::Deployment
-    DependsOn: [PredictMethod, HealthMethod]
+    DependsOn: [PredictMethod, HealthMethod, PageMethod, AskMethod]
     Properties:
       RestApiId: !Ref Api
 
@@ -96,6 +130,12 @@ Resources:
       RestApiId: !Ref Api
       DeploymentId: !Ref Deployment
       StageName: prod
+      # the usage plan only limits routes with a key, so the open page and /ask get this limit on the whole stage
+      MethodSettings:
+        - ResourcePath: '/*'
+          HttpMethod: '*'
+          ThrottlingRateLimit: 2
+          ThrottlingBurstLimit: 5
 
   ApiKey:
     Type: AWS::ApiGateway::ApiKey
@@ -127,6 +167,8 @@ Resources:
       UsagePlanId: !Ref UsagePlan
 
 Outputs:
+  PageUrl:
+    Value: !Sub https://${Api}.execute-api.${AWS::Region}.amazonaws.com/prod/
   PredictUrl:
     Value: !Sub https://${Api}.execute-api.${AWS::Region}.amazonaws.com/prod/predict
   HealthUrl:

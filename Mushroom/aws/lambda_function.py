@@ -1,7 +1,9 @@
 import base64
 import json
 import os
+from pathlib import Path
 
+PAGE = Path(__file__).with_name('page.html')
 runtime = None
 
 
@@ -22,6 +24,9 @@ def respond(status, body):
 
 def handler(event, context):
     method = event.get('httpMethod') or event.get('requestContext', {}).get('http', {}).get('method', 'POST')
+    # GET / is the web page, every other GET is the health check; POST /predict and POST /ask both predict
+    if method == 'GET' and event.get('resource') == '/':
+        return {'statusCode': 200, 'headers': {'Content-Type': 'text/html; charset=utf-8'}, 'body': PAGE.read_text(encoding='utf-8')}
     if method == 'GET':
         return respond(200, {'status': 'ok'})
     body = event.get('body') or ''
