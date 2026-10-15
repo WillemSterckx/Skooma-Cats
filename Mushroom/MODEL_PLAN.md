@@ -3,7 +3,7 @@
 The plan for the next step after cleaning: train and compare models, train and tune one on AWS, and host the best one so the backend can call it over HTTPS. Written on 9 Oct 2026, deadline 15 Oct.
 
 **What's already done and tested:** the model code (`model/`), the AWS front door (`aws/`), a local copy of the whole API for the backend team, the SageMaker notebook (`3.5MushroomSageMaker.ipynb`: training and tuning ran on AWS on 10 Oct and again on 13 Oct in a new lab account, both on the 70/15/15 split; `results/sagemaker_*` is the 13 Oct run, which is the hosted model, and `results/*_run_1` the 10 Oct run; on 15 Oct the hosted model answered a real request over the HTTPS url) and 39 tests.
-**What's left:** notebooks 3 and 4 (the model comparison itself), rerun notebook 3.5's hosting part with the restart-safe cells and keep its outputs, then rewrite its tuning text and Story with the 13 Oct numbers, plugging the J backend into the url, and the retrain-on-push pipeline.
+**What's left:** notebooks 3 and 4 (the model comparison itself), rerun notebook 3.5's hosting part with the restart-safe cells and keep its outputs (its training and tuning outputs and text are from the 13 Oct run), plugging the J backend into the url, and the retrain-on-push pipeline.
 
 ## 1. How it fits together
 
@@ -109,7 +109,7 @@ Positive class = poisonous. Calling a poisonous mushroom edible is the dangerous
 
 First run on the 70/15/15 split (random forest, 200 trees, 10 Oct): val AUC 0.836, threshold 0.249 (val recall 0.90), then on test: AUC 0.835, recall 0.887, precision 0.52, accuracy 0.65. That's a lot of edible mushrooms flagged as poisonous. Test recall lands just under the 0.90 target: the validation part has only 284 poisonous mushrooms, so a threshold picked there moves a bit on new rows. Notebook 3 can compare it with a threshold picked on out-of-fold predictions of the whole train part (3500 rows). Train AUC 0.974 against test AUC 0.835, so the forest also overfits (bigger leaves are one of the things the tuning job tries). **This trade-off is the main thing to discuss in notebook 3**: a precision-recall curve, and which recall we defend (0.90? 0.95?). The target is one argument, so changing it doesn't need code changes.
 
-**On AWS (10 Oct):** the baseline job gives exactly the local numbers (val 0.8363, test 0.8346, threshold 0.2492), with sklearn 1.9.0 in the container. The tuning job's best forest (593 trees, leaf 1, max_features 0.80) gets val AUC 0.850, test AUC 0.842, threshold 0.187, test recall 0.901, precision 0.505. But its cross-validation AUC on train is 0.826 ± 0.022, the same as the baseline (0.827 ± 0.018), so the gain on validation is within the noise. Leaf size matters (leaves of 1–4 rows: 0.843–0.850, leaves of 8–14: 0.817–0.830), `max_features` hardly does. That's the hosted model.
+**On AWS (10 Oct):** the baseline job gives exactly the local numbers (val 0.8363, test 0.8346, threshold 0.2492), with sklearn 1.9.0 in the container. The tuning job's best forest (593 trees, leaf 1, max_features 0.80) gets val AUC 0.850, test AUC 0.842, threshold 0.187, test recall 0.901, precision 0.505. But its cross-validation AUC on train is 0.826 ± 0.022, the same as the baseline (0.827 ± 0.018), so the gain on validation is within the noise. Leaf size matters (leaves of 1–4 rows: 0.843–0.850, leaves of 8–14: 0.817–0.830), `max_features` hardly does. **Second run (13 Oct, new lab account):** the baseline gives the same numbers again. The tuning job picks a different forest (308 trees, leaf 2, max_features 0.77) with the same val AUC (0.8499): test AUC 0.840, threshold 0.184, test recall 0.915, precision 0.502, cv 0.827 ± 0.022. That one is the hosted model (`results/sagemaker_best.json`; the 10 Oct run is in `results/*_run_1`).
 
 The threshold is rounded **down** to 4 decimals, so rounding can't push the recall under the target. The answer's `class` is decided on the same rounded probability it shows, so the two never contradict each other.
 
@@ -137,7 +137,7 @@ The course's "retrain on all data before deploying" would give a model the test 
 7. Test the leakage question from 4.1 (imputer inside vs outside the folds, on the same folds).
 8. Optional extension: K-Means on the scaled measurements, compared with the class and the stemless/giant groups.
 
-**3.5MushroomSageMaker.ipynb:** rerun the hosting part on AWS (section 7) and keep the outputs. The text after the tuning job and the Story still describe the 10 Oct run, so they get the 13 Oct numbers once that run's outputs are in the notebook.
+**3.5MushroomSageMaker.ipynb:** rerun the hosting part on AWS (section 7) and keep the outputs. The training and tuning outputs and their text are from the 13 Oct run.
 
 **4MushroomCompare.ipynb:** one table with every model on the same test set (accuracy, precision, recall, F1, ROC-AUC, PR-AUC, train vs test AUC, training time), including the AWS jobs from `results/sagemaker_tuning.csv` and `results/sagemaker_best.json`. ROC + PR curves in one plot, confusion matrices, fold-by-fold comparison. A difference smaller than the fold std is noise. The conclusion says which model is hosted and why. If that isn't the AWS forest, add its `--model` and parameters to `train.py` (rf, hgb and logreg are already there) and run the training cell again.
 
